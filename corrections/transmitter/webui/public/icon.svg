@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <rect width="512" height="512" rx="64" fill="#0ea5e9"/>
+  <g fill="white">
+    <circle cx="256" cy="180" r="32"/>
+    <path d="M256 240 L180 340 L332 340 Z" stroke="white" stroke-width="8" fill="none"/>
+    <path d="M256 240 L100 420 L412 420 Z" stroke="white" stroke-width="8" fill="none"/>
+    <text x="256" y="450" font-size="48" font-family="Arial, sans-serif" text-anchor="middle" fill="white">RTK</text>
+  </g>
+</svg>

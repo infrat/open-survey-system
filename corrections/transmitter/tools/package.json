@@ -1,0 +1,22 @@
+{
+    "name": "ntrip-helper",
+    "version": "1.0.0",
+    "description": "Node.js helper for testing NTRIP Caster connections and logging RTCM messages",
+    "main": "ntrip_helper.js",
+    "scripts": {
+        "start": "node ntrip_helper.js",
+        "test": "node ntrip_helper.js rtk2go.com 2101 WROC"
+    },
+    "keywords": [
+        "ntrip",
+        "rtcm",
+        "gps",
+        "gnss",
+        "rtk"
+    ],
+    "author": "",
+    "license": "MIT",
+    "engines": {
+        "node": ">=12.0.0"
+    }
+}

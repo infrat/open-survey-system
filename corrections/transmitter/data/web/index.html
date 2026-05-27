@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RTCM Transmitter Config</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>RTCM Transmitter</h1>
+            <p class="subtitle">Configuration Interface</p>
+        </header>
+
+        <div id="status" class="status hidden"></div>
+
+        <div class="tabs">
+            <button class="tab-button active" data-tab="wifi">WiFi</button>
+            <button class="tab-button" data-tab="ntrip">NTRIP</button>
+            <button class="tab-button" data-tab="gga">GGA Position</button>
+            <button class="tab-button" data-tab="lora">LoRa Radio</button>
+            <button class="tab-button" data-tab="rtcm">RTCM Filtering</button>
+        </div>
+
+        <form id="configForm">
+            <!-- WiFi Tab -->
+            <div class="tab-content active" id="wifi-tab">
+                <h2>WiFi Configuration</h2>
+                <div class="form-group">
+                    <label for="wifiSSID">WiFi Network (SSID):</label>
+                    <div class="input-with-icon">
+                        <input type="text" id="wifiSSID" name="wifi.ssid" placeholder="Enter SSID or click scan icon" required>
+                        <button type="button" class="input-icon-btn" onclick="openWiFiScanModal()" title="Scan for networks">
+                            <span class="icon-search"></span>
+                        </button>
+                    </div>
+                    <small>Enter manually or scan for available networks</small>
+                </div>
+                <div class="form-group">
+                    <label for="wifiPassword">Password:</label>
+                    <input type="password" id="wifiPassword" name="wifi.password">
+                    <small>Leave empty for open networks</small>
+                </div>
+                <div class="form-group">
+                    <label for="wifiTimeout">Connection Timeout (ms):</label>
+                    <input type="number" id="wifiTimeout" name="wifi.timeout" min="5000" max="60000" step="1000" required>
+                </div>
+            </div>
+
+            <!-- NTRIP Tab -->
+            <div class="tab-content" id="ntrip-tab">
+                <h2>NTRIP Caster Configuration</h2>
+                <div class="form-group">
+                    <label for="ntripHost">Host:</label>
+                    <input type="text" id="ntripHost" name="ntrip.host" required>
+                </div>
+                <div class="form-group">
+                    <label for="ntripPort">Port:</label>
+                    <input type="number" id="ntripPort" name="ntrip.port" min="1" max="65535" required>
+                </div>
+                <div class="form-group">
+                    <label for="ntripUser">Username:</label>
+                    <input type="text" id="ntripUser" name="ntrip.user">
+                </div>
+                <div class="form-group">
+                    <label for="ntripPassword">Password:</label>
+                    <input type="password" id="ntripPassword" name="ntrip.password">
+                </div>
+                <div class="form-group">
+                    <label for="ntripMountpoint">Mountpoint:</label>
+                    <div class="input-with-icon">
+                        <input type="text" id="ntripMountpoint" name="ntrip.mountpoint" placeholder="Enter mountpoint or click scan icon" required>
+                        <button type="button" class="input-icon-btn" onclick="openMountpointModal()" title="Fetch mountpoints">
+                            <span class="icon-search"></span>
+                        </button>
+                    </div>
+                    <small>Enter manually or fetch from NTRIP caster</small>
+                </div>
+                <div class="form-group">
+                    <label for="ntripTimeout">Connection Timeout (ms):</label>
+                    <input type="number" id="ntripTimeout" name="ntrip.timeout" min="5000" max="60000" step="1000" required>
+                </div>
+            </div>
+
+            <!-- GGA Tab -->
+            <div class="tab-content" id="gga-tab">
+                <h2>GGA Position Configuration</h2>
+                <div class="form-group">
+                    <label for="ggaLatitude">Latitude (°):</label>
+                    <input type="number" id="ggaLatitude" name="gga.latitude" step="0.0001" min="-90" max="90" required>
+                    <small>Decimal degrees, positive = North</small>
+                </div>
+                <div class="form-group">
+                    <label for="ggaLongitude">Longitude (°):</label>
+                    <input type="number" id="ggaLongitude" name="gga.longitude" step="0.0001" min="-180" max="180" required>
+                </div>
+                <div class="form-group">
+                    <label for="ggaAltitude">Altitude (m):</label>
+                    <input type="number" id="ggaAltitude" name="gga.altitude" step="0.1" required>
+                </div>
+                <div class="form-group">
+                    <label for="ggaSendInterval">Send Interval (ms):</label>
+                    <input type="number" id="ggaSendInterval" name="gga.sendInterval" min="1000" max="60000" step="1000" required>
+                </div>
+            </div>
+
+            <!-- LoRa Tab -->
+            <div class="tab-content" id="lora-tab">
+                <h2>LoRa Radio Configuration</h2>
+                <div class="form-group">
+                    <label for="loraFrequency">Frequency (MHz):</label>
+                    <input type="text" inputmode="decimal" id="loraFrequency" name="lora.frequency" pattern="[0-9]*[.,]?[0-9]*" required>
+                    <small>e.g. 433.085, 868.0, 915.0 (SX1276 range: 137–1020 MHz)</small>
+                </div>
+                <div class="form-group">
+                    <label for="loraSpreadingFactor">Spreading Factor (SF):</label>
+                    <select id="loraSpreadingFactor" name="lora.spreadingFactor" required>
+                        <option value="6">SF6</option>
+                        <option value="7">SF7</option>
+                        <option value="8">SF8</option>
+                        <option value="9">SF9</option>
+                        <option value="10">SF10</option>
+                        <option value="11">SF11</option>
+                        <option value="12">SF12</option>
+                    </select>
+                    <small>Higher = longer range, lower speed</small>
+                </div>
+                <div class="form-group">
+                    <label for="loraBandwidth">Bandwidth (Hz):</label>
+                    <select id="loraBandwidth" name="lora.bandwidth" required>
+                        <option value="7800">7.8 kHz</option>
+                        <option value="10400">10.4 kHz</option>
+                        <option value="15600">15.6 kHz</option>
+                        <option value="20800">20.8 kHz</option>
+                        <option value="31250">31.25 kHz</option>
+                        <option value="41700">41.7 kHz</option>
+                        <option value="62500">62.5 kHz</option>
+                        <option value="125000">125 kHz</option>
+                        <option value="250000">250 kHz</option>
+                        <option value="500000">500 kHz</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="loraCodingRate">Coding Rate:</label>
+                    <select id="loraCodingRate" name="lora.codingRate" required>
+                        <option value="5">4/5</option>
+                        <option value="6">4/6</option>
+                        <option value="7">4/7</option>
+                        <option value="8">4/8</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="loraTxPower">TX Power (dBm):</label>
+                    <input type="number" id="loraTxPower" name="lora.txPower" min="2" max="20" required>
+                    <small>2-20 dBm (higher = more power, more range)</small>
+                </div>
+                <div class="form-group">
+                    <label for="loraSyncWord">Sync Word (hex):</label>
+                    <input type="text" id="loraSyncWord" name="lora.syncWord" pattern="^0x[0-9A-Fa-f]{2}$" required>
+                    <small>Format: 0x12 (must match receiver)</small>
+                </div>
+            </div>
+
+            <!-- RTCM Tab -->
+            <div class="tab-content" id="rtcm-tab">
+                <h2>RTCM Message Filtering</h2>
+                <div class="rtcm-section">
+                    <h3>Allowed Message Types</h3>
+                    <p class="help-text">RTCM message types to transmit via LoRa (comma-separated)</p>
+                    <div class="form-group">
+                        <textarea id="rtcmMessageTypes" name="rtcm.messageTypes" rows="3" placeholder="1005, 1007, 1019, 1020, 1033, 1075, 1085, 1095, 1125, 1230"></textarea>
+                        <small>Example: Station position (1005), GPS ephemeris (1019), GPS MSM5 (1075)</small>
+                    </div>
+                </div>
+                <div class="rtcm-section">
+                    <h3>High Priority Types</h3>
+                    <p class="help-text">Types transmitted first when buffer has multiple messages (MSM observations)</p>
+                    <div class="form-group">
+                        <textarea id="rtcmPriorityTypes" name="rtcm.priorityMessageTypes" rows="2" placeholder="1075, 1085, 1095, 1125"></textarea>
+                        <small>MSM5: GPS (1075), GLONASS (1085), Galileo (1095), BeiDou (1125)</small>
+                    </div>
+                </div>
+            </div>
+
+            <div class="button-group">
+                <button type="submit" class="btn btn-primary">Save & Restart</button>
+                <button type="button" class="btn btn-secondary" id="loadBtn">Reload Config</button>
+                <button type="button" class="btn btn-danger" id="restartBtn">Restart Device</button>
+            </div>
+        </form>
+
+        <footer>
+            <p>RTCM LoRa Transmitter v1.0 | <a href="https://github.com/infrat/oss-transmitter" target="_blank">GitHub</a></p>
+        </footer>
+    </div>
+
+    <!-- WiFi Scan Modal -->
+    <div id="wifiScanModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Available WiFi Networks</h3>
+                <span class="modal-close" onclick="closeWiFiScanModal()">&times;</span>
+            </div>
+            <div class="modal-body">
+                <div id="scanStatus" class="scan-status">
+                    <div class="loading"></div>
+                    <p>Scanning for networks...</p>
+                </div>
+                <div id="networkListContainer" style="display:none;">
+                    <div class="network-list" id="networkList"></div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" onclick="closeWiFiScanModal()">Close</button>
+                <button type="button" class="btn btn-primary" onclick="rescanNetworks()">Rescan</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Mountpoint Fetch Modal -->
+    <div id="mountpointModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Available NTRIP Mountpoints</h3>
+                <span class="modal-close" onclick="closeMountpointModal()">&times;</span>
+            </div>
+            <div class="modal-body">
+                <div id="mountpointStatus" class="scan-status">
+                    <div class="loading"></div>
+                    <p>Fetching mountpoints...</p>
+                </div>
+                <div id="mountpointListContainer" style="display:none;">
+                    <div class="network-list" id="mountpointList"></div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" onclick="closeMountpointModal()">Close</button>
+                <button type="button" class="btn btn-primary" onclick="refetchMountpoints()">Refresh</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>

@@ -1,0 +1,26 @@
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# PlatformIO build artifacts
+.pio/
+
+# VSCode
+.vscode/
+
+# Node / webui
+node_modules/
+dist/
+dist-esp32/
+
+# Logs
+*.log
+
+# Binary flash dumps
+*.bin
+
+# KiCad backups
+*-backups/
+*_autosave*
+fp-info-cache

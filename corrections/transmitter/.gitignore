@@ -1,0 +1,81 @@
+# PlatformIO build artifacts
+.pio/
+.pioenvs/
+.piolibdeps/
+.clang_complete
+.gcc-flags.json
+
+# Build directories
+build/
+lib/
+tools/*.txt
+!lib/README
+
+# IDE files
+.vscode/
+*.code-workspace
+.idea/
+*.iml
+
+# OS files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Logs
+*.log
+
+# Temporary files
+*.tmp
+*.temp
+*~
+
+# Configuration backup
+config.h.bak
+config.h.old
+
+# Firmware files (optional - uncomment if you don't want to track binaries)
+# *.bin
+# *.elf
+# *.map
+
+# Documentation build
+docs/_build/
+docs/.doctrees/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.env
+
+# Web UI build output
+webui/dist-esp32/
+webui/dist/
+
+# Node.js (if using any web tools)
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Arduino IDE (if using alongside PlatformIO)
+*.ino.*
+
+# Certificate files (if storing certificates)
+*.pem
+*.crt
+*.key
+
+# Backup files
+*~
+*.bak
+*.backup
