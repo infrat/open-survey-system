@@ -1,0 +1,14 @@
+Reference,Qty,Value,Footprint,Description
+U2,1,WEMOS_C3_mini,RF_Module:WEMOS_C3_mini,ESP32-C3 MCU module (UART/BLE/SPP bridge)
+J1,1,LC29HDA_Socket,OpenRTK:LC29H,Quectel LC29H DA dual-band RTK GNSS module socket
+J2,1,HC05_Socket,OpenRTK:HC05,HC-05 classic Bluetooth SPP module socket
+J3,1,BMS_Socket,OpenRTK:BMS_FM5324,FM5324 Li-ion battery management module socket
+J4,1,BATT_Socket,Connector_PinHeader_2.54mm:PinHeader_1x02_P2.54mm_Horizontal,Battery connector 1x02 2.54mm
+J5,1,CP_Socket,OpenRTK:RTK_ControlPanel,Control panel (buttons/LED) socket
+C1,1,100n,Capacitor_THT:C_Disc_D3.0mm_W1.6mm_P2.50mm,Decoupling capacitor
+C2,1,100n,Capacitor_THT:C_Disc_D3.0mm_W1.6mm_P2.50mm,Decoupling capacitor
+C5,1,100n,Capacitor_THT:C_Disc_D3.0mm_W1.6mm_P2.50mm,Decoupling capacitor
+C6,1,100uF,Capacitor_THT:CP_Radial_D5.0mm_P2.50mm,Bulk electrolytic capacitor
+C7,1,10uF,Capacitor_THT:CP_Radial_D4.0mm_P2.00mm,Bulk electrolytic capacitor
+R1,1,300R,Resistor_THT:R_Axial_DIN0204_L3.6mm_D1.6mm_P7.62mm_Horizontal,Current-limit/LED resistor
+R2,1,300R,Resistor_THT:R_Axial_DIN0204_L3.6mm_D1.6mm_P7.62mm_Horizontal,Current-limit/LED resistor
