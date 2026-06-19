@@ -2,6 +2,7 @@
 .DS_Store
 .AppleDouble
 .LSOverride
+.cache
 
 # PlatformIO build artifacts
 .pio/
@@ -24,3 +25,5 @@ dist-esp32/
 *-backups/
 *_autosave*
 fp-info-cache
+
+compile_commands.json
