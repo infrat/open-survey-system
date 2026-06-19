@@ -4,7 +4,7 @@
 
 This is the main ESP32 firmware for the **Open Survey System (OSS)** - an open-source GNSS RTK rover designed for professional surveying and mapping applications. The firmware provides a bidirectional **UART ↔ BLE bridge** to connect the GNSS RTK receiver with iOS/Android devices.
 
-## 🎯 Project Overview
+## Project Overview
 
 The **Open Survey System RTK Rover** consists of three main components:
 
@@ -20,9 +20,9 @@ This firmware handles:
 - ✅ Power optimization for extended battery life
 - ✅ Status LED indication
 
-## 🔧 Hardware Components
+## Hardware Components
 
-## 🔌 UART Pinout (ESP32 ↔ LC29H DA)
+## UART Pinout (ESP32 ↔ LC29H DA)
 
 ```
 LC29H DA (GNSS)     ESP32 (Wemos D1 Mini32)
@@ -39,7 +39,7 @@ UART1_RX        <-- GPIO27 (TX - corrections to GNSS)
 - Data: 8N1 (8 bits, no parity, 1 stop bit)
 - Flow Control: None
 
-## ⚡ Power Optimization Features
+## Power Optimization Features
 
 The firmware implements aggressive power-saving to maximize battery life:
 
@@ -67,7 +67,7 @@ The firmware implements aggressive power-saving to maximize battery life:
 - **Idle (WiFi off, low BLE)**: ~105mA
 - **Battery life**: ~20-30 hours (with 3000mAh battery)
 
-## 📱 Mobile App Compatibility
+## Mobile App Compatibility
 
 ### Recommended iOS Apps
 
@@ -82,7 +82,7 @@ The firmware implements aggressive power-saving to maximize battery life:
 2. **Mobile Topographer**
 3. **Serial Bluetooth Terminal**
 
-## 🚀 Building and Uploading
+## Building and Uploading
 
 ### First Upload (via USB)
 
@@ -116,7 +116,7 @@ pio run -t upload
 3. Upload within 3 minutes
 4. WiFi auto-disables after timeout
 
-## 🔍 Configuration
+## Configuration
 
 Edit `include/config.h` to customize:
 
@@ -161,7 +161,7 @@ Edit `include/config.h` to customize:
 #define BLE_LED_BLINK_MS 250           // Blink period when disconnected
 ```
 
-## 📊 Nordic UART Service (NUS) UUIDs
+## Nordic UART Service (NUS) UUIDs
 
 The firmware implements the standard Nordic UART Service for maximum compatibility:
 
@@ -170,7 +170,7 @@ Service UUID:  6E400001-B5A3-F393-E0A9-E50E24DCCA9E
 RX Char UUID:  6E400002-B5A3-F393-E0A9-E50E24DCCA9E  (Mobile → ESP32 → GNSS)
 TX Char UUID:  6E400003-B5A3-F393-E0A9-E50E24DCCA9E  (GNSS → ESP32 → Mobile)
 
-## 🐛 Debugging and Monitoring
+## Debugging and Monitoring
 
 ### Serial Monitor (USB - 115200 baud)
 
@@ -217,7 +217,7 @@ Waiting for GPS data and iOS connection...
 | **Fast blinking (100ms)** | Error - UART init failed   |
 | **Fast blinking (200ms)** | Error - BLE init failed    |
 
-## 🔧 Troubleshooting
+## Troubleshooting
 
 ### No GNSS Data Received
 
@@ -295,7 +295,7 @@ LC29H DA RX (pin 4) → ESP32 GPIO27 (TX)
 - Verify CPU frequency scaling (`[Power] CPU frequency: 80 MHz`)
 - Ensure BLE TX power is -12dBm (`[BLE] TX Power set to -12dBm`)
 
-## 📝 Example NMEA/RTCM Data
+## Example NMEA/RTCM Data
 
 ### NMEA Output (LC29H DA → Mobile)
 
@@ -312,7 +312,7 @@ Binary RTCM3 messages (e.g., 1005, 1077, 1087, 1097, 1127)
 Sent from NTRIP caster via mobile app through BLE
 ```
 
-## 🏗️ Project Structure
+## Project Structure
 
 ```
 esp32-uart-ble/
@@ -326,7 +326,7 @@ esp32-uart-ble/
 └── README.md                 # This file
 ```
 
-## 📦 Dependencies
+## Dependencies
 
 - **Platform**: Espressif32 (PlatformIO)
 - **Framework**: Arduino
@@ -334,7 +334,7 @@ esp32-uart-ble/
   - `NimBLE-Arduino` v1.4.0+ (h2zero) - Lightweight BLE stack
   - Built-in: WiFi, ArduinoOTA, esp_bt
 
-## 🛠️ Technical Specifications
+## Technical Specifications
 
 | Parameter           | Value                      |
 | ------------------- | -------------------------- |
@@ -349,7 +349,7 @@ esp32-uart-ble/
 | **Flash Usage**     | ~1.0MB / 4MB (25%)         |
 | **RAM Usage**       | ~59KB / 320KB (18%)        |
 
-## 🤝 Contributing
+## Contributing
 
 This is part of the **Open Survey System** project. Contributions welcome!
 
@@ -357,11 +357,11 @@ This is part of the **Open Survey System** project. Contributions welcome!
 - Submit pull requests for improvements
 - Share your rover builds and field tests
 
-## 📄 License
+## License
 
 MIT License - Free for personal and commercial use
 
-## 🙏 Acknowledgments
+## Acknowledgments
 
 - **Nordic Semiconductor** - Nordic UART Service specification
 - **h2zero** - NimBLE-Arduino lightweight BLE library

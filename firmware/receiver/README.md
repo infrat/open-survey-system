@@ -6,6 +6,8 @@ ESP32 + SX1276 LoRa → NTRIP gateway that turns long-range RTCM corrections int
 ![Platform](https://img.shields.io/badge/platform-ESP32-green.svg)
 ![Status](https://img.shields.io/badge/status-active-success.svg)
 
+![OSS RTCM Receiver](../../imgs/receiver1.jpeg)
+
 ## Overview
 
 Open Source Surveying Receiver is an ESP32 firmware that acts as the field-side counterpart of the [OSS Transmitter](../transmitter/README.md). It receives RTCM3 corrections over a 433.7 MHz LoRa link, reassembles fragmented messages, validates them, and re-serves them to nearby GNSS rovers through a local NTRIP caster over its own WiFi access point — no internet connection required in the field.

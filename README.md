@@ -89,7 +89,7 @@ A compact, dual‑frequency GNSS RTK receiver that pairs with a mobile app. The 
 ## 4) Data & Interfaces
 
 - **Corrections:** RTCM 3.x over NTRIP (TCP/HTTP Basic).
-- **Rover ↔ Phone link:** **Bluetooth SPP** (UART over BT, or BLE).
+- **Rover ↔ Phone link:** **Bluetooth SPP** (UART over BT using BT module, or BLE using ESP32).
 - **Position output:** NMEA from rover to mobile apps.
 - **Radio link:** LoRa 433 MHz, P2P mode (not LoRaWAN), optimized for low‑latency streaming.
 - **Transport paths:**

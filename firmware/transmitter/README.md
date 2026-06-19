@@ -6,6 +6,8 @@ ESP32 + SX1276 RTK gateway connecting NTRIP clients to LoRa transmitters for RTC
 ![Platform](https://img.shields.io/badge/platform-ESP32-green.svg)
 ![Status](https://img.shields.io/badge/status-active-success.svg)
 
+![OSS RTCM Transmitter](../../imgs/transmitter.jpeg)
+
 ## Overview
 
 Open Source Surveying Transmitter is an ESP32 firmware that transforms the device into a professional RTK gateway. The system receives GNSS corrections from NTRIP servers over WiFi and retransmits them over long distances via LoRa, enabling precise RTK positioning for rovers without internet access.
