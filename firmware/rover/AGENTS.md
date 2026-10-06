@@ -4,7 +4,7 @@ Guidelines for AI agents (GitHub Copilot, Cursor, Claude, etc.) and developers w
 
 ## 🎯 Project Philosophy
 
-**OSS Rover** is professional embedded firmware for the ESP32. It is a bidirectional **UART ↔ Bluetooth bridge** that connects a Quectel **LC29H DA** GNSS RTK receiver to iOS/Android survey apps, over either the **Nordic UART Service (NUS)** on BLE (default) or **Bluetooth Classic SPP** (Android only). The transport is a compile-time choice - see [Transport Abstraction](#transport-abstraction).
+**OSS Rover** is professional embedded firmware for the ESP32. It is a bidirectional **UART ↔ wireless bridge** that connects a Quectel **LC29H DA** GNSS RTK receiver to iOS/Android survey apps. One firmware image offers three client links, chosen at runtime in the web UI: the **Nordic UART Service (NUS)** on BLE (default), **Bluetooth Classic SPP** (Android only) or a raw **WiFi TCP** socket - see [Transport Abstraction](#transport-abstraction).
 
 It is focused on:
 
@@ -22,9 +22,9 @@ It is focused on:
 Before making any code changes:
 
 1. **Read the context** - Understand the goal and its impact on the bridge
-2. **Analyze dependencies** - Decide whether it touches UART, BLE, WiFi/OTA, or power
+2. **Analyze dependencies** - Decide whether it touches UART, a transport, the WiFi setup window/OTA, or power
 3. **Review existing code** - Don't duplicate functionality, use what exists
-4. **Mind power & timing** - Changes must not break power scaling or data throughput
+4. **Mind power, memory & timing** - Changes must not break the setup window, the heap budget or data throughput
 
 ### Step 2: Plan Implementation (MANDATORY)
 
@@ -56,7 +56,7 @@ Create an **action plan** before coding:
 - Check serial monitor logs (115200 baud)
 - Connect a BLE app and confirm NMEA flows out / RTCM flows in
 - Confirm RTK fix still converges with corrections
-- Watch for memory issues (ESP32 has only 320KB usable RAM)
+- Watch for memory issues (`/api/status` reports `freeHeap`, `maxAlloc`, `minFreeHeap`)
 
 ## 🏗️ System Architecture
 
@@ -73,58 +73,87 @@ LC29H DA  ──NMEA──►  │        ESP32         │  ──BLE NUS TX─
 - **UART → BLE (TX char)**: NMEA sentences and status from the GNSS to the phone.
 - **BLE (RX char) → UART**: RTCM corrections from the phone's NTRIP client to the GNSS.
 
+### Boot Sequence: WiFi Setup Window, Then Bluetooth (CRITICAL)
+
+WiFi and Bluetooth share **one 2.4 GHz radio** and most of the heap. Running them together was measured on this hardware and does not work: ~34KB free heap, truncated web responses, failing OTA, and seconds of WiFi latency once a BLE client streams. So they never run at the same time:
+
+```
+power-on ──► SETUP WINDOW (WiFi only: web UI, OTA, Telnet; ~125KB free heap)
+                │  idle for setupWindowSec (default 30s), or "Start Bluetooth now" in the UI
+                ▼
+             WiFi OFF ──► Bluetooth transport starts (BLE or SPP) ──► bridge runs
+```
+
+- The window is an **idle timeout**. It is extended only by real use: the web UI heartbeat (`GET /api/status?ka=1`, sent while the page is visible and was touched in the last 5 minutes), config/scan requests, an OTA transfer, or a Telnet client. **A phone that merely joins the WiFi does not extend it.**
+- WiFi does not come back until the next restart.
+- **WiFi TCP transport is the exception**: no Bluetooth is started at all, WiFi stays on, the bridge starts at boot.
+- During the window the LED gives a short flash once per second and GNSS output is discarded.
+
+**⚠️ Do not start a Bluetooth stack while WiFi is up**, and do not add features that need both at once.
+
 ### Main Components
 
 ```
 include/
-  config.h                  → transport selection, pins, WiFi/OTA, power, BLE constants
+  config.h                  → pins, factory defaults, WiFi/OTA, power, BLE constants
+data/                       → web UI (plain HTML/CSS/JS, served from LittleFS)
+partitions.csv              → 2 × 1.81MB OTA slots + 256KB LittleFS
 src/
-  main.cpp                  → setup + loop, power management, OTA, orchestration
+  main.cpp                  → setup + loop orchestration, setup window → transport hand-over
+  settings.cpp/h            → RoverSettings + NVS persistence (SettingsStore)
+  wifi_manager.cpp/h        → AP / STA / AP+STA, AP fallback, setup window timeout
+  web_server.cpp/h          → static UI + REST API (/api/status, /api/config, ...)
+  ota_service.cpp/h         → ArduinoOTA + mDNS
+  telnet_service.cpp/h      → remote log console (status / restart / help)
+  logger.cpp/h              → logPrint / logPrintln to Serial + Telnet mirror
+  system_control.cpp/h      → deferred restart
+  bridge.cpp/h              → GNSS UART ↔ transport, link status LED
   uart_handler.cpp/h        → UART comms with LC29H DA
-  transport.h               → ITransport interface (no Bluetooth stack includes)
-  rover_transport.h         → compile-time transport selection → RoverTransport
-  ble_uart_service.cpp/h    → BLE Nordic UART Service (NUS) via NimBLE
+  transport.h               → ITransport interface (no radio stack includes)
+  transport_factory.cpp/h   → creates the transport selected in settings
+  ble_uart_service.cpp/h    → BLE Nordic UART Service (Bluedroid)
   spp_serial_service.cpp/h  → Bluetooth Classic SPP via BluetoothSerial (Bluedroid)
+  tcp_transport.cpp/h       → raw TCP server (NMEA out, RTCM in)
 ```
-
-| Module               | Responsibility                                            |
-| -------------------- | --------------------------------------------------------- |
-| `main.cpp`           | Boot, WiFi/OTA window, CPU freq scaling, bridge loop, LED |
-| `uart_handler`       | UART1 read/write to the GNSS (GPIO25 RX / GPIO27 TX)      |
-| `transport`          | Radio-agnostic contract used by `main.cpp`                |
-| `ble_uart_service`   | NUS service, RX/TX characteristics, chunked notifications |
-| `spp_serial_service` | SPP server, `onData` callback, unchunked stream writes    |
 
 ### Transport Abstraction
 
-`main.cpp` never names a Bluetooth stack. It talks to `RoverTransport`, a typedef resolved in `rover_transport.h`:
+`main.cpp` and `bridge` never name a radio stack. They talk to `ITransport` (in `transport.h`): `begin()`, `setTxPower()`, `sendData()`, `setDataCallback()`, `setLogCallback()`, `isConnected()`, `getConnectedCount()`, `name()`, `loop()`. `createTransport()` picks the implementation from `settings.transport` once per boot; changing it in the web UI saves to NVS and restarts.
 
-```cpp
-#if ROVER_TRANSPORT == TRANSPORT_SPP
-#include "spp_serial_service.h"
-typedef SPPSerialService RoverTransport;
-#elif ROVER_TRANSPORT == TRANSPORT_BLE
-#include "ble_uart_service.h"
-typedef BLEUARTService RoverTransport;
-#endif
-```
-
-`ITransport` (in `transport.h`) is the whole contract: `begin()`, `setTxPower()`, `sendData()`, `setDataCallback()`, `setLogCallback()`, `isConnected()`, `getConnectedCount()`, `name()`.
+| Transport     | Stack            | iOS | Android | Notes                                         |
+| ------------- | ---------------- | --- | ------- | --------------------------------------------- |
+| BLE (default) | Bluedroid BLE    | ✅  | ✅      | Nordic UART Service, 185B MTU, chunked        |
+| SPP           | Bluedroid BR/EDR | ❌  | ✅      | Plain byte stream, pair first                 |
+| TCP           | WiFi (lwIP)      | ✅  | ✅      | Port 10110 by default, up to 2 clients, no BT |
 
 Conventions to keep:
 
-- **`transport.h` must stay free of any Bluetooth include** - both implementations include it.
-- **Every implementation file is wrapped in its own `#if ROVER_TRANSPORT == ...` guard**, with `#include "config.h"` first. The unused one compiles to an empty translation unit, so the whole `src/` tree can be built by both envs.
-- **Application code includes `rover_transport.h`**, never `ble_uart_service.h` / `spp_serial_service.h` directly.
+- **`transport.h` must stay free of any radio stack include** - every implementation includes it.
 - **Radio-specific calls belong inside the implementation.** TX power is a good example: `esp_ble_tx_power_set()` vs `esp_bredr_tx_power_set()` both hide behind `setTxPower()`.
-- Adding a transport = new `ITransport` implementation + one branch in `rover_transport.h` + one env. `main.cpp` should not change.
+- **Each Bluetooth transport enables the controller for its own mode only.** The Arduino core always starts the dual-mode controller; `begin()` first releases the unused half (`esp_bt_controller_mem_release`) and enables BLE-only / Classic-only itself. That is ~20KB of heap - keep it.
+- **Both Bluetooth transports use Bluedroid** so they fit one image. Mixing NimBLE with `BluetoothSerial` in one firmware is discouraged upstream and was not tried here - do not reintroduce it without testing.
+- Adding a transport = new `ITransport` implementation + a `TransportMode` value + one branch in `transport_factory.cpp` + the UI option. `main.cpp` should not change.
 
-| Transport                 | env             | Stack     | iOS | Android | Flash   |
-| ------------------------- | --------------- | --------- | --- | ------- | ------- |
-| `TRANSPORT_BLE` (default) | `oss-rover`     | NimBLE    | ✅  | ✅      | ~1.08MB |
-| `TRANSPORT_SPP`           | `oss-rover-spp` | Bluedroid | ❌  | ✅      | ~1.59MB |
+**⚠️ iOS has no access to Bluetooth Classic SPP without MFi certification.** Never make SPP the default - it would silently drop every iPhone user.
 
-**⚠️ iOS has no access to Bluetooth Classic SPP without MFi certification.** Never switch the default env to SPP - it would silently drop every iPhone user.
+### Runtime Settings and Web API
+
+Everything the UI can change lives in `RoverSettings` (NVS namespace `rover`): transport, TCP port, WiFi mode, STA/AP credentials, setup window length. `config.h` only holds the factory defaults. Passwords are write-only over the API.
+
+| Endpoint              | Purpose                                                        |
+| --------------------- | -------------------------------------------------------------- |
+| `GET /api/status`     | Live state; `?ka=1` extends the setup window                   |
+| `GET /api/config`     | Current settings (no passwords)                                |
+| `POST /api/config`    | Validate, save, restart                                        |
+| `POST /api/restart`   | Restart without saving                                         |
+| `POST /api/wifi/off`  | End the setup window now (WiFi off, Bluetooth starts)          |
+| `GET /api/wifi/scan`  | Async network scan, poll until `scanning` is false             |
+
+There is **no authentication** on the web API yet, and the default AP is open.
+
+### WiFi Modes
+
+`AP`, `STA` or `AP+STA` (default). If a configured station cannot join its network within `WIFI_TIMEOUT_MS` (10s) the rover drops the station and runs as a plain AP (`OSSRTK-XXXX`), so the UI stays reachable.
 
 ### UART Pinout (ESP32 ↔ LC29H DA)
 
@@ -146,25 +175,21 @@ TX Char:  6E400003-B5A3-F393-E0A9-E50E24DCCA9E  (GNSS → ESP32 → Mobile)
 
 ## ⚡ Power Management (CRITICAL)
 
-This firmware is built around aggressive power saving. **Do not weaken these without good reason.**
+| Feature                | Behavior                                                             |
+| ---------------------- | -------------------------------------------------------------------- |
+| WiFi setup window      | WiFi only for `setupWindowSec` after boot (default 30s), then off    |
+| Low Bluetooth TX power | -9 dBm (~10-15m range, sufficient rover→phone)                       |
 
-| Feature                | Behavior                                          |
-| ---------------------- | ------------------------------------------------- |
-| CPU freq scaling       | 80 MHz idle / 240 MHz active (100ms threshold)    |
-| WiFi auto-shutdown     | WiFi on for 3 min after boot (OTA), then disabled |
-| Low Bluetooth TX power | -9 dBm (~10-15m range, sufficient rover→phone)    |
-
-Approximate budget for the BLE build: ~250mA with WiFi on → ~105mA idle → ~140-180mA active streaming. **The SPP build draws more** - Bluetooth Classic keeps a much costlier link up than BLE, so the 20-30h battery target does not carry over. Measure before quoting numbers for it.
+The WiFi TCP transport keeps WiFi on permanently and draws accordingly. Bluetooth Classic (SPP) keeps a costlier link up than BLE. Measure before quoting battery numbers.
 
 ```cpp
 // Power-related defines live in include/config.h:
-#define BLE_TX_POWER ESP_PWR_LVL_N9    // -9dBm low power (BLE build)
-#define SPP_TX_POWER ESP_PWR_LVL_N9    // -9dBm low power (SPP build)
-#define CPU_FREQ_ACTIVE 240            // MHz when streaming
-#define WIFI_ACTIVE_TIME_MS 180000     // 3 minutes
+#define BLE_TX_POWER ESP_PWR_LVL_N9      // -9dBm low power (BLE)
+#define SPP_TX_POWER ESP_PWR_LVL_N9      // -9dBm low power (SPP)
+#define DEFAULT_SETUP_WINDOW_SEC 30      // WiFi-only window after boot
 ```
 
-**⚠️ Don't change CPU scaling thresholds or the WiFi window without measuring power and confirming OTA still works.**
+> Earlier revisions of this document described 80/240 MHz CPU frequency scaling. It is not implemented in the firmware.
 
 ## 📝 Coding Standards
 
@@ -190,11 +215,11 @@ size_t bytes_read = 0;
 
 ### Configuration
 
-**All tunables live in `include/config.h`** (pins, WiFi/OTA, power, BLE). Don't scatter magic numbers across modules — add a `#define` and reference it.
+**Compile-time tunables and factory defaults live in `include/config.h`** (pins, WiFi/OTA, power, BLE). Don't scatter magic numbers across modules — add a `#define` and reference it. Anything the user should change in the field belongs in `RoverSettings` + the web UI instead.
 
 ### Memory Management
 
-ESP32 has limited RAM (~320KB usable). NimBLE is used specifically because it's lighter (~40KB vs ~100KB for the stock stack).
+ESP32 has limited RAM (~320KB usable). Bluedroid is heavy, which is exactly why WiFi and Bluetooth never run together (see the boot sequence). Measured free heap: ~125KB in the setup window; with both radios up it was ~34-57KB and the web server / OTA failed.
 
 ```cpp
 // GOOD: F() macro keeps literals in flash
@@ -228,27 +253,28 @@ if (!uartInit()) {
 
 ## 🚀 Build & Upload
 
+Run from the monorepo root. `oss-rover` uploads over OTA, `oss-rover-usb` over serial - same image.
+
 ### First upload (USB)
 
 ```bash
-pio run -e oss-rover              # build BLE variant (default)
-pio run -e oss-rover-spp          # build Bluetooth Classic SPP variant
-pio run -e oss-rover -t upload    # flash over USB
-pio device monitor                # serial @115200
+pio run -e oss-rover-usb -t upload      # firmware
+pio run -e oss-rover-usb -t uploadfs    # web UI (LittleFS)
+pio device monitor                      # serial @115200
 ```
+
+A serial flash is also required whenever `partitions.csv` changes - OTA cannot rewrite the partition table.
 
 ### OTA upload (WiFi)
 
 ```bash
-# WiFi is only active for 3 minutes after boot!
-pio run -e oss-rover -t upload    # targets ossrtk.local, auth=admin
+pio run -e oss-rover -t upload          # targets ossrtk.local, auth=admin
+pio run -e oss-rover -t uploadfs
 ```
 
-**Both envs must keep compiling.** A change to `main.cpp`, `config.h` or `transport.h` affects both variants - build both before calling it done.
+OTA only works during the setup window: restart the rover and start the upload within `setupWindowSec`. Compiling can eat the whole window, so either build first (`pio run -e oss-rover`) or open the web UI, which keeps WiFi up, and then upload.
 
-OTA workflow: reboot the rover → wait for WiFi connect (serial/LED) → upload within 3 minutes → WiFi auto-disables.
-
-> ⚠️ Run `pio device monitor` manually in a terminal — never as a blocking automation step.
+> ⚠️ Run `pio device monitor` manually in a terminal — never as a blocking automation step. Opening the serial port resets the board.
 
 ## 🐛 Debugging
 
@@ -264,6 +290,7 @@ Serial.println(F("[ERROR] UART init failed")); // error
 
 | Pattern               | Meaning                                 |
 | --------------------- | --------------------------------------- |
+| Short flash every 1s  | Setup window: WiFi only, no client link |
 | Blinking (250ms)      | Waiting for a mobile connection         |
 | Solid ON              | Mobile device connected                 |
 | Fast blinking (100ms) | Error - UART init failed                |
@@ -273,13 +300,14 @@ Serial.println(F("[ERROR] UART init failed")); // error
 
 After each change, verify:
 
-- [ ] Both envs compile without warnings (`pio run -e oss-rover`, `pio run -e oss-rover-spp`)
-- [ ] Serial shows UART + transport init OK
+- [ ] `pio run -e oss-rover` compiles without warnings and still fits the 1.81MB app slot
+- [ ] Setup window: web UI loads, `/api/status` shows `transport.active: false`, free heap is ~120KB
+- [ ] Window closes on its own after `setupWindowSec` without use, then the transport starts
+- [ ] An open web UI keeps the window open; "Start Bluetooth now" ends it
+- [ ] OTA works for firmware and filesystem inside the window
 - [ ] Device `OSSRTK` is discoverable and connects (BLE: advertises; SPP: pairs, then port opens)
-- [ ] NMEA flows GNSS → phone (UART → transport)
-- [ ] RTCM flows phone → GNSS (transport → UART) and RTK fix converges
-- [ ] WiFi auto-disables after 3 min; CPU drops to 80 MHz when idle
-- [ ] OTA still works within the 3-minute window
+- [ ] NMEA flows GNSS → phone and RTCM flows phone → GNSS; RTK fix converges
+- [ ] Changing the transport / WiFi mode in the UI survives the restart
 
 ### Note on RTK accuracy
 
@@ -287,34 +315,30 @@ A poor/no RTK fix is usually **not** a firmware bug. Check sky view, that correc
 
 ## 📚 Dependencies and Libraries
 
-Board `wemos_d1_mini32`, envs `oss-rover` (BLE) and `oss-rover-spp` (SPP) in the monorepo root `platformio.ini`.
+Board `wemos_d1_mini32`, envs `oss-rover` (OTA) and `oss-rover-usb` (serial) in the monorepo root `platformio.ini`; `firmware/rover/platformio.ini` is the standalone copy - keep the two in sync.
 
 ```ini
-[env:oss-rover]                        ; BLE - NimBLE
-lib_deps  = h2zero/NimBLE-Arduino@^1.4.0
-build_flags = -DCORE_DEBUG_LEVEL=3
-              -DCONFIG_BT_NIMBLE_MAX_CONNECTIONS=1
-              -DROVER_TRANSPORT=TRANSPORT_BLE
+lib_deps =
+    bblanchon/ArduinoJson@6.21.6
+    ESP32Async/ESPAsyncWebServer@3.7.10
+    ESP32Async/AsyncTCP@3.4.10
+    BLE / BluetoothSerial / WiFi / FS / LittleFS / Preferences / ESPmDNS / ArduinoOTA   ; framework-bundled
 
-[env:oss-rover-spp]                    ; Bluetooth Classic SPP - Bluedroid
-lib_deps  = BluetoothSerial            ; framework-bundled, must be declared
-build_flags = -DCORE_DEBUG_LEVEL=3
-              -DROVER_TRANSPORT=TRANSPORT_SPP
-
-board_build.partitions = min_spiffs.csv
+board_build.partitions = firmware/rover/partitions.csv
+board_build.filesystem = littlefs
 ```
 
-Built-in: WiFi, ArduinoOTA, esp_bt.
+**⚠️ Flash is tight**: the image uses ~92% of the 1.81MB app slot. Check the size line after adding anything.
 
-**⚠️ Never put both stacks in one env.** NimBLE and Bluedroid are mutually exclusive Bluetooth hosts - a dual BLE+SPP build would require porting `ble_uart_service` off NimBLE onto Bluedroid.
+**⚠️ The web UI must stay small and build-free.** LittleFS is 256KB; the UI is ~55KB of hand-written HTML/CSS/JS styled after the transmitter UI. Do not port the transmitter's React bundle (~800KB).
 
-**⚠️ New envs need a `scripts/set_env_dirs.py` entry**, otherwise `include/config.h` is not on the include path in a monorepo root build.
+**⚠️ New envs need a `scripts/set_env_dirs.py` entry**, otherwise `include/config.h` and the `data/` directory are not picked up in a monorepo root build.
 
-**⚠️ Don't update libraries without testing!** NimBLE in particular is sensitive — verify BLE connect, throughput, and power after any bump, then commit with a "tested OK" note.
+**⚠️ Don't update libraries without testing!** ESPAsyncWebServer/AsyncTCP lose data under memory pressure (open upstream issue) - verify UI load and OTA on hardware after any bump.
 
 ## 🔐 Security Notes
 
-Credentials and OTA settings live in `include/config.h`:
+Factory-default credentials and OTA settings live in `include/config.h`; the WiFi ones can be overridden in the web UI (stored in NVS):
 
 ```cpp
 #define WIFI_SSID "YourNetwork"
@@ -325,6 +349,7 @@ Credentials and OTA settings live in `include/config.h`:
 
 - This is an open-source repo — don't commit real WiFi/OTA secrets.
 - The OTA password protects firmware uploads; change it from the default for any real device.
+- The web UI / REST API has no authentication and the default AP is open. Exposure is limited to the setup window (or permanently in WiFi TCP mode).
 - BLE NUS is unauthenticated by design (app compatibility); keep TX power low to limit range.
 
 ## 📖 Documentation
@@ -350,12 +375,17 @@ Credentials and OTA settings live in `include/config.h`:
 
 ## ⚠️ Common Pitfalls
 
-### 1. Breaking power scaling
+### 1. Running WiFi and Bluetooth together
 
 ```cpp
-// BAD: leaving CPU at 240 MHz or WiFi on indefinitely → drains battery
-// Respect CPU_FREQ_IDLE and WIFI_ACTIVE_TIME_MS.
+// BAD: starting BLE/SPP while WiFi is up, or keeping WiFi on "just for status"
+// → one radio, ~34KB heap: truncated HTTP responses, failed OTA, laggy link.
+// GOOD: WiFi only in the setup window; the transport starts after WiFi is off.
 ```
+
+### 1b. Blocking the main loop
+
+`UARTHandler::readData()` waits for the full requested length (1s timeout). Always clamp the length to `available()`. The loop also serves OTA, Telnet and the setup window timeout.
 
 ### 2. Ignoring BLE MTU / chunk size
 
@@ -367,19 +397,6 @@ Credentials and OTA settings live in `include/config.h`:
 ### 3. Changing NUS UUIDs or device name casually
 
 Mobile apps discover the rover by the standard NUS UUIDs and the `BT_DEVICE_NAME` (`OSSRTK`). Changing them breaks existing app setups.
-
-### 3b. Leaking a Bluetooth stack include past the guard
-
-```cpp
-// BAD: unguarded include in a shared header - breaks the other env's build
-#include <NimBLEDevice.h>
-
-// GOOD: config.h first, then the guard, then the stack header
-#include "config.h"
-#if ROVER_TRANSPORT == TRANSPORT_BLE
-#include <NimBLEDevice.h>
-#endif
-```
 
 ### 4. Watchdog Timeout
 
@@ -401,14 +418,14 @@ Default LC29H DA baud is 115200, but some modules ship at 9600 — check the dat
 1. **Always read context** - Use `read_file` on `main.cpp`, the relevant module, `transport.h` and `config.h` before changing behavior.
 2. **Plan before action** - List steps before editing.
 3. **Small changes** - One feature = several small commits.
-4. **Mind power & compatibility** - Confirm power scaling and BLE/NUS compatibility aren't broken.
+4. **Mind power, memory & compatibility** - Confirm the setup window, heap budget and BLE/NUS compatibility aren't broken.
 5. **Follow existing patterns** - Don't introduce new styles where one is established.
 
 ### If You're Not Sure
 
 **Ask the user** instead of guessing:
 
-- "Should this keep WiFi alive longer, and what's the power tradeoff?"
+- "Should this keep WiFi alive longer? It delays Bluetooth and costs power."
 - "Does this change affect BLE app compatibility?"
 - "Should I update the README too?"
 
@@ -416,11 +433,12 @@ Default LC29H DA baud is 115200, but some modules ship at 9600 — check the dat
 
 Before a major change, read:
 
-- `src/main.cpp` - boot, power, OTA, bridge loop
-- `include/config.h` - all parameters, including `ROVER_TRANSPORT`
-- `src/transport.h` + `src/rover_transport.h` - the transport contract and selection
-- `src/uart_handler.*` for GNSS comms, `src/ble_uart_service.*` / `src/spp_serial_service.*` for the radios
-- `README.md` for the wiring, power model, and app setup
+- `src/main.cpp` - boot, setup window → transport hand-over
+- `include/config.h` - compile-time parameters and factory defaults
+- `src/settings.*`, `src/wifi_manager.*`, `src/web_server.*` - runtime settings, WiFi window, REST API
+- `src/transport.h` + `src/transport_factory.*` - the transport contract and selection
+- `src/uart_handler.*` for GNSS comms, `src/ble_uart_service.*` / `src/spp_serial_service.*` / `src/tcp_transport.*` for the links
+- `data/` for the web UI, `README.md` for the wiring, power model, and app setup
 
 ---
 

@@ -24,10 +24,12 @@ ENV_CONFIG = {
     },
     "oss-rover": {
         "include": "firmware/rover/include",
+        "data":    "firmware/rover/data",
     },
-    # Same sources as oss-rover, Bluetooth Classic SPP instead of BLE
-    "oss-rover-spp": {
+    # Same image as oss-rover, serial upload
+    "oss-rover-usb": {
         "include": "firmware/rover/include",
+        "data":    "firmware/rover/data",
     },
 }
 
@@ -41,8 +43,9 @@ if "include" in cfg:
 
 if "data" in cfg:
     data_path = os.path.join(PROJECT_DIR, cfg["data"])
-    env.Replace(PROJECTDATA_DIR=data_path)
-    print(f"[set_env_dirs] PROJECTDATA_DIR = {data_path}")
+    # PlatformIO 6 builders read PROJECT_DATA_DIR; PROJECTDATA_DIR is the pre-6 name
+    env.Replace(PROJECT_DATA_DIR=data_path, PROJECTDATA_DIR=data_path)
+    print(f"[set_env_dirs] PROJECT_DATA_DIR = {data_path}")
 
 # In a monorepo root build, WiFi ends up as a top-level dependency instead of
 # a sub-dependency of WebServer.  As a result, WiFi/src is NOT added to

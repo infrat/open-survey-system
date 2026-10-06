@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#ffffff">
+    <title>OSS RTK Rover</title>
+    <link rel="icon" type="image/svg+xml" href="icon.svg">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <!-- Icon sprite (lucide outlines, same set the transmitter UI uses) -->
+    <svg xmlns="http://www.w3.org/2000/svg" hidden>
+        <symbol id="i-save" viewBox="0 0 24 24"><path d="M15.2 3a2 2 0 0 1 1.4.6l3.8 3.8a2 2 0 0 1 .6 1.4V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"/><path d="M17 21v-7a1 1 0 0 0-1-1H8a1 1 0 0 0-1 1v7"/><path d="M7 3v4a1 1 0 0 0 1 1h7"/></symbol>
+        <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></symbol>
+        <symbol id="i-power" viewBox="0 0 24 24"><path d="M12 2v10"/><path d="M18.4 6.6a9 9 0 1 1-12.77.04"/></symbol>
+        <symbol id="i-wifi" viewBox="0 0 24 24"><path d="M12 20h.01"/><path d="M2 8.82a15 15 0 0 1 20 0"/><path d="M5 12.859a10 10 0 0 1 14 0"/><path d="M8.5 16.429a5 5 0 0 1 7 0"/></symbol>
+        <symbol id="i-lock" viewBox="0 0 24 24"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></symbol>
+        <symbol id="i-bluetooth" viewBox="0 0 24 24"><path d="m7 7 10 10-5 5V2l5 5L7 17"/></symbol>
+        <symbol id="i-network" viewBox="0 0 24 24"><rect x="16" y="16" width="6" height="6" rx="1"/><rect x="2" y="16" width="6" height="6" rx="1"/><rect x="9" y="2" width="6" height="6" rx="1"/><path d="M5 16v-3a1 1 0 0 1 1-1h12a1 1 0 0 1 1 1v3"/><path d="M12 12V8"/></symbol>
+    </svg>
+
+    <div class="wrap">
+        <header class="header">
+            <div class="brand">
+                <svg class="logo" viewBox="0 0 363 451.48902" aria-hidden="true">
+                    <g transform="translate(-98,-36.509489)">
+                        <path fill="currentColor" d="m 260.79475,469.28525 c -7.6384,-4.13331 -18.6634,-10.35726 -24.5,-13.83102 -5.83661,-3.47375 -14.21201,-8.36986 -18.61201,-10.88024 -4.4,-2.51039 -20.375,-11.73895 -35.5,-20.50791 -15.125,-8.76897 -34.925,-20.13233 -44,-25.25192 -17.11537,-9.65549 -21.20212,-12.63631 -23.58928,-17.2057 l -1.41072,-2.70034 0.0165,-116.79966 0.0164,-116.79966 2.23355,-3.8995 2.23355,-3.89951 78,-44.595751 78,-44.595752 6,0.01351 6,0.01351 15.5,8.878936 c 35.11331,20.114117 74.38025,42.395064 105,59.579367 17.875,10.03174 33.78994,19.15478 35.36653,20.27343 1.57659,1.11864 3.70421,3.87842 4.72804,6.13283 l 1.86151,4.09893 0.022,114.78984 0.022,114.78984 -1.95115,3.82457 c -2.544,4.98664 7.71559,-1.22035 -115.04885,69.60389 -47.13185,27.19092 -45.7691,26.49288 -51.71016,26.48763 l -4.78984,-0.004 z m 68.59175,-42.34731 48.70375,-27.83898 -13.11205,-18.39508 c -12.13687,-17.02697 -49.71292,-70.4089 -66.79756,-94.89508 -4.02937,-5.775 -7.70227,-10.9275 -8.16201,-11.45 -0.45974,-0.5225 -0.83589,17.365 -0.83589,39.75 v 40.7 h 4.5 4.5 l 0.006,1.75 c 0.004,0.9625 -2.4482,10.075 -5.44828,20.25 -3.00008,10.175 -6.37712,21.65 -7.50452,25.5 -1.12741,3.85 -2.42416,7.57774 -2.88167,8.28387 -1.80089,2.77951 -4.15658,-0.13147 -6.57815,-8.12874 -8.85926,-29.25923 -11.97955,-40.5793 -12.0328,-43.65513 l -0.0606,-3.5 3.25,-0.31336 3.25,-0.31336 v -40.58511 -40.58511 l -15.5648,22.26171 c -15.21668,21.76381 -30.2912,43.16372 -47.74925,67.78523 -4.77727,6.7375 -12.47889,17.61925 -17.1147,24.18167 l -8.42875,11.93168 2.41901,1.585 c 1.33046,0.87174 7.9359,4.65167 14.67875,8.39983 11.21167,6.23225 51.06973,28.61326 71.75974,40.29438 4.675,2.6394 8.95,4.8049 9.5,4.81223 0.55,0.007 22.91669,-12.51422 49.70376,-27.82565 z M 172.87081,377.00878 c 4.50344,-6.43499 14.5885,-20.69998 22.41124,-31.69998 14.97496,-21.05714 53.25294,-75.18755 57.9858,-82 l 2.77894,-4 -2.68203,-0.88049 c -4.70709,-1.5453 -6.18202,-3.56032 -6.18202,-8.44576 0,-2.79911 0.62925,-5.21158 1.65499,-6.34501 l 1.65499,-1.82874 h 29.23802 29.23802 l 0.52655,1.37215 c 0.2896,0.75468 0.83945,3.45877 1.22189,6.00908 0.77824,5.18967 -0.16905,7.01685 -4.6349,8.93998 l -2.73736,1.17879 8.22869,11.5 c 4.52578,6.325 13.12969,18.475 19.1198,27 18.28941,26.02909 59.14769,83.3794 62.96977,88.38689 l 1.44021,1.88688 12.28967,-6.80201 c 6.75931,-3.74111 13.52716,-7.65835 15.03966,-8.70498 l 2.75,-1.90297 V 262.31213 153.95166 l -1.57072,-1.57072 c -0.86389,-0.8639 -3.45139,-2.65251 -5.75,-3.97469 -2.2986,-1.32219 -34.27624,-19.54723 -71.06141,-40.50009 l -66.88213,-38.096119 -12.61787,7.156114 c -6.93983,3.935863 -15.09287,8.606445 -18.11787,10.379072 -3.025,1.772626 -13.6,7.837957 -23.5,13.478513 -9.9,5.64056 -21.6,12.35727 -26,14.92603 -4.4,2.56875 -20.9375,12.0362 -36.75,21.03878 l -28.75,16.36832 v 108.70352 108.70352 l 1.62702,1.37245 c 1.72315,1.45353 27.52115,16.66899 28.37298,16.73416 0.275,0.021 4.18463,-5.22674 8.68807,-11.66174 z m 99.31193,-152.30049 c -12.04067,-1.30997 -23.41077,-7.19188 -31.93791,-16.52194 -6.71374,-7.34589 -10.83968,-16.08768 -12.71092,-26.93107 l -1.53102,-8.87192 1.11237,-7.479 c 2.9108,-19.57084 18.23419,-37.01824 37.40682,-42.59188 7.13109,-2.07306 20.36047,-2.08341 28.07921,-0.022 22.97243,6.1353 39.58145,27.33359 39.58145,50.51832 0,13.86292 -5.52725,26.6146 -16.10042,37.14457 -11.77284,11.72474 -26.43993,16.65444 -43.89958,14.75492 z m 15.5,-17.25884 c 11.1783,-2.98599 19.34599,-9.55455 24.21869,-19.47699 l 2.78131,-5.66366 -0.0106,-9 -0.0106,-9 -3.14611,-6.03662 c -12.34514,-23.68745 -45.07172,-27.35297 -60.42142,-6.76746 -5.3899,7.2284 -6.41127,10.62232 -6.41127,21.30408 v 9.5 l 2.80226,6 c 7.29001,15.60883 23.86808,23.50268 40.19774,19.14065 z m -13.11928,-12.40596 c -1.55618,-1.02147 -12.47915,-14.95861 -15.16732,-19.35272 -2.72011,-4.44631 -2.7446,-5.35077 -0.2134,-7.88197 3.70397,-3.70397 6.40524,-2.62943 12.56954,5 3.11065,3.85 5.94255,6.99039 6.2931,6.97865 0.35055,-0.0117 1.82706,-1.69924 3.28114,-3.75 5.97478,-8.42654 10.96296,-13.22865 13.74121,-13.22865 7.19465,0 6.85706,5.584 -0.9472,15.6674 -3.33421,4.30793 -7.65143,9.9701 -9.5938,12.5826 -3.49986,4.70731 -6.83207,6.03998 -9.96327,3.98469 z"/>
+                    </g>
+                </svg>
+                <h1>OSS RTK Rover</h1>
+                <span id="linkPill" class="pill" hidden></span>
+            </div>
+            <p class="subtitle">Configure your RTK rover bridge</p>
+        </header>
+
+        <div class="tabs" role="tablist">
+            <button type="button" class="tab" role="tab" data-tab="status" aria-selected="true">Status</button>
+            <button type="button" class="tab" role="tab" data-tab="connection" aria-selected="false">Connection</button>
+            <button type="button" class="tab" role="tab" data-tab="wifi" aria-selected="false">WiFi</button>
+        </div>
+
+        <!-- ===== Status ===== -->
+        <section class="panel" id="panel-status" role="tabpanel">
+            <div id="offlineNote" class="note note-warn" hidden>
+                The rover is not responding. Its WiFi has probably switched off and Bluetooth is
+                now running &ndash; restart the rover to open this page again.
+            </div>
+
+            <div id="setupNote" class="note note-info" hidden>
+                <div>
+                    <strong>Setup mode.</strong> <span id="setupText"></span>
+                </div>
+                <button type="button" class="btn btn-outline" id="finishBtn">Start Bluetooth now</button>
+            </div>
+
+            <div class="card">
+                <h2>Data link</h2>
+                <dl class="rows">
+                    <div><dt>Mode</dt><dd id="stTransport">&ndash;</dd></div>
+                    <div><dt>Client</dt><dd id="stClient">&ndash;</dd></div>
+                    <div id="stTcpRow" hidden><dt>Address</dt><dd id="stTcpAddr" class="mono">&ndash;</dd></div>
+                </dl>
+            </div>
+
+            <div class="card">
+                <h2>WiFi</h2>
+                <dl class="rows">
+                    <div><dt>Mode</dt><dd id="stWifiMode">&ndash;</dd></div>
+                    <div><dt>Network</dt><dd id="stSta">&ndash;</dd></div>
+                    <div><dt>Access point</dt><dd id="stAp">&ndash;</dd></div>
+                    <div><dt>WiFi turns off in</dt><dd id="stRemaining">&ndash;</dd></div>
+                </dl>
+            </div>
+
+            <div class="card">
+                <h2>Device</h2>
+                <dl class="rows">
+                    <div><dt>Firmware</dt><dd id="stVersion">&ndash;</dd></div>
+                    <div><dt>Uptime</dt><dd id="stUptime">&ndash;</dd></div>
+                    <div><dt>Free memory</dt><dd id="stHeap">&ndash;</dd></div>
+                </dl>
+            </div>
+        </section>
+
+        <!-- ===== Connection ===== -->
+        <section class="panel" id="panel-connection" role="tabpanel" hidden>
+            <div class="field">
+                <span class="label">Send GNSS data over</span>
+                <div class="choices">
+                    <label class="choice">
+                        <input type="radio" name="transport" value="ble">
+                        <svg class="icon"><use href="#i-bluetooth"/></svg>
+                        <span class="choice-text">
+                            <span class="choice-title">Bluetooth LE</span>
+                            <span class="choice-desc">Nordic UART service. Works with iOS and Android apps.</span>
+                        </span>
+                    </label>
+                    <label class="choice">
+                        <input type="radio" name="transport" value="spp">
+                        <svg class="icon"><use href="#i-bluetooth"/></svg>
+                        <span class="choice-text">
+                            <span class="choice-title">Bluetooth SPP</span>
+                            <span class="choice-desc">Classic serial port. Android only, pair the rover first.</span>
+                        </span>
+                    </label>
+                    <label class="choice">
+                        <input type="radio" name="transport" value="tcp">
+                        <svg class="icon"><use href="#i-network"/></svg>
+                        <span class="choice-text">
+                            <span class="choice-title">WiFi (TCP)</span>
+                            <span class="choice-desc">Raw NMEA out / RTCM in on a TCP socket. WiFi stays on, no Bluetooth.</span>
+                        </span>
+                    </label>
+                </div>
+            </div>
+
+            <div id="tcpFields" hidden>
+                <div class="field">
+                    <label class="label" for="tcpPort">TCP port *</label>
+                    <input class="input" type="number" id="tcpPort" min="1" max="65535" step="1" inputmode="numeric">
+                    <p class="hint">Point your app at <span id="tcpHint" class="mono">ossrtk.local</span>. Up to 2 clients at once.</p>
+                </div>
+            </div>
+
+            <p class="hint">Only one link is active at a time. Changing it restarts the rover. Bluetooth links start once the setup window closes and WiFi turns off.</p>
+        </section>
+
+        <!-- ===== WiFi ===== -->
+        <section class="panel" id="panel-wifi" role="tabpanel" hidden>
+            <div class="field">
+                <span class="label">WiFi mode</span>
+                <div class="segmented" role="radiogroup">
+                    <label><input type="radio" name="wifiMode" value="ap"><span>Access point</span></label>
+                    <label><input type="radio" name="wifiMode" value="sta"><span>Station</span></label>
+                    <label><input type="radio" name="wifiMode" value="ap_sta"><span>AP + Station</span></label>
+                </div>
+                <p class="hint" id="wifiModeHint"></p>
+            </div>
+
+            <div id="staFields">
+                <h2 class="group">Join a network</h2>
+                <div class="field">
+                    <label class="label" for="staSsid">WiFi network (SSID) <span id="staRequired">*</span></label>
+                    <div class="inline">
+                        <input class="input" type="text" id="staSsid" maxlength="32" placeholder="Network name" autocapitalize="none" autocomplete="off" spellcheck="false">
+                        <button type="button" class="btn btn-outline btn-icon" id="scanBtn" title="Scan for networks" aria-label="Scan for networks">
+                            <svg class="icon"><use href="#i-wifi"/></svg>
+                        </button>
+                    </div>
+                </div>
+                <div class="field">
+                    <label class="label" for="staPassword">Password</label>
+                    <input class="input" type="password" id="staPassword" maxlength="63" autocomplete="off">
+                    <label class="check"><input type="checkbox" id="staOpen"><span>Open network (no password)</span></label>
+                </div>
+            </div>
+
+            <div id="apFields">
+                <h2 class="group">Rover access point</h2>
+                <div class="field">
+                    <label class="label" for="apSsid">Access point name</label>
+                    <input class="input" type="text" id="apSsid" maxlength="32" placeholder="Automatic" autocapitalize="none" autocomplete="off" spellcheck="false">
+                    <p class="hint">Leave empty to use the automatic name<span id="apAutoName"></span>.</p>
+                </div>
+                <div class="field">
+                    <label class="label" for="apPassword">Password</label>
+                    <input class="input" type="password" id="apPassword" maxlength="63" autocomplete="off">
+                    <label class="check"><input type="checkbox" id="apOpen"><span>Open network (no password)</span></label>
+                </div>
+            </div>
+
+            <h2 class="group">Setup window</h2>
+            <div class="field">
+                <label class="label" for="windowSec">WiFi available after power-on (seconds) *</label>
+                <input class="input" type="number" id="windowSec" min="15" max="600" step="1" inputmode="numeric">
+                <p class="hint" id="activeHint"></p>
+            </div>
+        </section>
+    </div>
+
+    <!-- ===== Fixed action bar ===== -->
+    <div class="bar">
+        <div class="bar-inner" id="barActions">
+            <button type="button" class="btn btn-primary grow" id="saveBtn">
+                <svg class="icon"><use href="#i-save"/></svg>Save &amp; Restart
+            </button>
+            <button type="button" class="btn btn-outline" id="reloadBtn" title="Reload settings" aria-label="Reload settings">
+                <svg class="icon"><use href="#i-refresh"/></svg>
+            </button>
+            <button type="button" class="btn btn-destructive" id="restartBtn" title="Restart device" aria-label="Restart device">
+                <svg class="icon"><use href="#i-power"/></svg>
+            </button>
+        </div>
+        <div class="bar-inner" id="barBusy" hidden>
+            <div class="busy">
+                <svg class="icon spin"><use href="#i-refresh"/></svg>
+                <span id="busyText">Reconnecting to device...</span>
+            </div>
+        </div>
+        <div class="bar-inner" id="barLost" hidden>
+            <div class="lost">
+                The rover did not come back at this address. If you changed the WiFi settings,
+                join its network and open <span class="mono">http://ossrtk.local</span>.
+            </div>
+            <button type="button" class="btn btn-outline" id="retryBtn">Retry</button>
+        </div>
+    </div>
+
+    <!-- ===== Dialogs ===== -->
+    <dialog id="confirmDialog" class="dialog">
+        <h3 id="confirmTitle"></h3>
+        <p id="confirmText"></p>
+        <div class="dialog-footer">
+            <button type="button" class="btn btn-outline" id="confirmCancel">Cancel</button>
+            <button type="button" class="btn btn-primary" id="confirmOk"></button>
+        </div>
+    </dialog>
+
+    <dialog id="scanDialog" class="dialog">
+        <h3>Available WiFi networks</h3>
+        <p>Select the network the rover should join</p>
+        <div class="networks" id="scanList"></div>
+        <div class="dialog-footer split">
+            <button type="button" class="btn btn-outline" id="scanClose">Close</button>
+            <button type="button" class="btn btn-outline grow" id="rescanBtn">
+                <svg class="icon"><use href="#i-refresh"/></svg><span id="rescanText">Rescan</span>
+            </button>
+        </div>
+    </dialog>
+
+    <div class="toasts" id="toasts" aria-live="polite"></div>
+
+    <script src="app.js"></script>
+</body>
+</html>

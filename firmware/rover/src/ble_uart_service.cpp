@@ -1,7 +1,4 @@
 #include "config.h"
-
-#if ROVER_TRANSPORT == TRANSPORT_BLE
-
 #include <esp_bt.h>
 #include "ble_uart_service.h"
 
@@ -15,28 +12,49 @@ bool BLEUARTService::begin(const char *deviceName)
     if (_logCallback)
         _logCallback("[BLE] Initializing BLE...");
 
-    // Initialize NimBLE
-    NimBLEDevice::init(deviceName);
+    // The Arduino core always brings the controller up in dual mode (BLE +
+    // Classic). This boot only uses BLE, so hand the Classic half back to the
+    // heap and enable the controller BLE-only before BLEDevice::init() gets to
+    // it (btStart() leaves an already enabled controller alone).
+    esp_bt_controller_mem_release(ESP_BT_MODE_CLASSIC_BT);
+    esp_bt_controller_config_t btCfg = BT_CONTROLLER_INIT_CONFIG_DEFAULT();
+    btCfg.mode = ESP_BT_MODE_BLE;
+    esp_err_t err = esp_bt_controller_init(&btCfg);
+    if (err == ESP_OK)
+    {
+        err = esp_bt_controller_enable(ESP_BT_MODE_BLE);
+    }
+    if (err != ESP_OK)
+    {
+        if (_logCallback)
+            _logCallback("[BLE] BLE-only controller start failed [0x%X]", err);
+        return false;
+    }
+
+    // Initialize the BLE host
+    BLEDevice::init(deviceName);
 
     // Set MTU
-    NimBLEDevice::setMTU(BLE_MTU_SIZE);
+    BLEDevice::setMTU(BLE_MTU_SIZE);
 
     // Create BLE Server
-    _pServer = NimBLEDevice::createServer();
+    _pServer = BLEDevice::createServer();
     _pServer->setCallbacks(new ServerCallbacks(this));
 
     // Create Nordic UART Service
     _pService = _pServer->createService(SERVICE_UUID);
 
-    // TX Characteristic (ESP32 → iOS) - Notify
+    // TX Characteristic (ESP32 → mobile) - Notify. Bluedroid does not add the
+    // client configuration descriptor on its own, apps need it to subscribe.
     _pTxCharacteristic = _pService->createCharacteristic(
         CHARACTERISTIC_UUID_TX,
-        NIMBLE_PROPERTY::NOTIFY);
+        BLECharacteristic::PROPERTY_NOTIFY);
+    _pTxCharacteristic->addDescriptor(new BLE2902());
 
-    // RX Characteristic (iOS → ESP32) - Write/Write Without Response
+    // RX Characteristic (mobile → ESP32) - Write/Write Without Response
     _pRxCharacteristic = _pService->createCharacteristic(
         CHARACTERISTIC_UUID_RX,
-        NIMBLE_PROPERTY::WRITE | NIMBLE_PROPERTY::WRITE_NR);
+        BLECharacteristic::PROPERTY_WRITE | BLECharacteristic::PROPERTY_WRITE_NR);
 
     _pRxCharacteristic->setCallbacks(new RxCallbacks(this));
 
@@ -44,19 +62,19 @@ bool BLEUARTService::begin(const char *deviceName)
     _pService->start();
 
     // Start advertising
-    BLEAdvertising *pAdvertising = NimBLEDevice::getAdvertising();
+    BLEAdvertising *pAdvertising = BLEDevice::getAdvertising();
     pAdvertising->addServiceUUID(SERVICE_UUID);
     pAdvertising->setScanResponse(true);
     pAdvertising->setMinPreferred(0x06); // helper functions for connection parameters
     pAdvertising->setMaxPreferred(0x12);
 
-    NimBLEDevice::startAdvertising();
+    BLEDevice::startAdvertising();
 
     if (_logCallback)
     {
         _logCallback("[BLE] Nordic UART Service started");
         _logCallback("[BLE] Device name: %s", deviceName);
-        _logCallback("[BLE] Waiting for iOS connection...");
+        _logCallback("[BLE] Waiting for connection...");
     }
 
     return true;
@@ -85,7 +103,7 @@ void BLEUARTService::sendData(const uint8_t *data, size_t length)
             size_t chunkSize = min((size_t)BLE_CHUNK_SIZE, length - offset);
 
             // Send data chunk via BLE notification
-            _pTxCharacteristic->setValue(data + offset, chunkSize);
+            _pTxCharacteristic->setValue((uint8_t *)(data + offset), chunkSize);
             _pTxCharacteristic->notify();
 
             offset += chunkSize;
@@ -138,11 +156,8 @@ void BLEUARTService::ServerCallbacks::onConnect(BLEServer *pServer)
     _service->_deviceConnected = true;
     if (_service->_logCallback)
     {
-        _service->_logCallback("[BLE] iOS device connected!");
+        _service->_logCallback("[BLE] Device connected!");
     }
-
-    // Optional: update connection parameters for better performance
-    // NimBLEDevice::updateConnParams(...)
 }
 
 void BLEUARTService::ServerCallbacks::onDisconnect(BLEServer *pServer)
@@ -150,12 +165,12 @@ void BLEUARTService::ServerCallbacks::onDisconnect(BLEServer *pServer)
     _service->_deviceConnected = false;
     if (_service->_logCallback)
     {
-        _service->_logCallback("[BLE] iOS device disconnected");
+        _service->_logCallback("[BLE] Device disconnected");
     }
 
     // Restart advertising
     delay(500);
-    NimBLEDevice::startAdvertising();
+    BLEDevice::startAdvertising();
     if (_service->_logCallback)
     {
         _service->_logCallback("[BLE] Restarted advertising");
@@ -166,12 +181,11 @@ void BLEUARTService::ServerCallbacks::onDisconnect(BLEServer *pServer)
 
 void BLEUARTService::RxCallbacks::onWrite(BLECharacteristic *pCharacteristic)
 {
-    // Receive data from iOS
+    // Receive data from the mobile app
     std::string value = pCharacteristic->getValue();
 
     if (value.length() > 0)
     {
-
         // Call callback if set
         if (_service->_dataCallback)
         {
@@ -179,5 +193,3 @@ void BLEUARTService::RxCallbacks::onWrite(BLECharacteristic *pCharacteristic)
         }
     }
 }
-
-#endif // ROVER_TRANSPORT == TRANSPORT_BLE

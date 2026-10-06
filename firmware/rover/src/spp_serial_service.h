@@ -2,9 +2,6 @@
 #define SPP_SERIAL_SERVICE_H
 
 #include "config.h"
-
-#if ROVER_TRANSPORT == TRANSPORT_SPP
-
 #include <BluetoothSerial.h>
 #include <esp_bt.h>
 #include "transport.h"
@@ -12,12 +9,12 @@
 /**
  * @brief Bluetooth Classic (SPP) side of the UART bridge.
  *
- * Drop-in alternative to BLEUARTService for Android clients. SPP is a plain
+ * Alternative to BLEUARTService for Android clients. SPP is a plain
  * byte stream: there is no MTU to respect and no chunking needed - the
  * BluetoothSerial TX task buffers and fragments outgoing data itself.
  *
- * @warning iOS cannot use SPP without MFi certification. Build with
- *          ROVER_TRANSPORT=TRANSPORT_BLE for iOS support.
+ * @warning iOS cannot use SPP without MFi certification. Select
+ *          the BLE transport for iOS support.
  */
 class SPPSerialService : public ITransport
 {
@@ -60,5 +57,4 @@ private:
     TransportLogCallback _logCallback;
 };
 
-#endif // ROVER_TRANSPORT == TRANSPORT_SPP
 #endif // SPP_SERIAL_SERVICE_H

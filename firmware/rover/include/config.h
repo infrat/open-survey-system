@@ -1,25 +1,7 @@
 #ifndef CONFIG_H
 #define CONFIG_H
 
-// ===== Transport Selection (BLE vs Bluetooth Classic SPP) =====
-// The rover bridges the GNSS UART to a mobile app over one of two radios.
-// Selected at compile time - both stacks cannot run at the same time
-// (NimBLE and Bluedroid are mutually exclusive Bluetooth hosts).
-//
-//   TRANSPORT_BLE - BLE Nordic UART Service via NimBLE. Works on iOS and
-//                   Android. Lower RAM/flash footprint, lower power.
-//   TRANSPORT_SPP - Bluetooth Classic Serial Port Profile via Bluedroid.
-//                   ANDROID ONLY - iOS does not expose SPP to apps without
-//                   MFi certification. Higher throughput, higher power draw.
-//
-// Override from platformio.ini:
-//   build_flags = -DROVER_TRANSPORT=TRANSPORT_SPP
-#define TRANSPORT_BLE 0
-#define TRANSPORT_SPP 1
-
-#ifndef ROVER_TRANSPORT
-#define ROVER_TRANSPORT TRANSPORT_SPP
-#endif
+#define FIRMWARE_VERSION "2.0.0"
 
 // ===== UART Configuration (GPS) =====
 #define GPS_UART_NUM UART_NUM_1 // UART1 for GPS
@@ -32,13 +14,28 @@
 #define DEBUG_UART_NUM UART_NUM_0 // UART0 for debug/logging (Serial - USB)
 #define DEBUG_BAUD_RATE 115200    // Baud rate for debug
 
-// ===== WiFi Configuration (for OTA updates) =====
-#define WIFI_SSID "YourNetwork"               // WiFi network name
-#define WIFI_PASSWORD "YourPassword" // WiFi password
-#define OTA_HOSTNAME "ossrtk"                // Hostname for OTA
+// ===== Runtime settings: factory defaults =====
+// Live values are stored in NVS and edited through the web UI. These are only
+// used on first boot, after a reset, or when stored values fail validation.
+#define DEFAULT_TRANSPORT_MODE 0  // 0 = BLE, 1 = Bluetooth SPP, 2 = WiFi TCP
+#define DEFAULT_WIFI_MODE 2       // 0 = AP, 1 = STA, 2 = AP+STA
+#define DEFAULT_SETUP_WINDOW_SEC 30 // WiFi-only setup window after boot, before Bluetooth starts
+#define SETUP_WINDOW_MIN_SEC 15
+#define SETUP_WINDOW_MAX_SEC 600
+
+// ===== WiFi Configuration =====
+#define WIFI_SSID "YourNetwork"               // default STA network name
+#define WIFI_PASSWORD "YourPassword" // default STA password
+#define AP_SSID_PREFIX "OSSRTK-"             // AP name = prefix + last MAC bytes
+#define OTA_HOSTNAME "ossrtk"                // Hostname for OTA / mDNS
 #define OTA_PASSWORD "admin"                 // OTA update password
-#define WIFI_TIMEOUT_MS 10000                // WiFi connection timeout (10s)
-#define WIFI_ACTIVE_TIME_MS 180000           // WiFi active time after boot (3 minutes)
+#define WIFI_TIMEOUT_MS 10000                // STA connect timeout before AP fallback / service start
+
+// ===== Network services =====
+#define HTTP_PORT 80
+#define TELNET_PORT 23
+#define TCP_PORT_DEFAULT 10110 // de-facto standard NMEA-0183 over TCP port
+#define TCP_MAX_CLIENTS 2
 
 // ===== NTP Configuration =====
 #define NTP_SERVER "pool.ntp.org" // NTP server
@@ -50,10 +47,10 @@
 #define SPP_TX_POWER ESP_PWR_LVL_N9 // BR/EDR TX power: -9dBm (low power mode)
 #define CPU_FREQ_ACTIVE 240         // CPU frequency when transferring data (MHz)
 
-// ===== Bluetooth Device Name (both transports) =====
+// ===== Bluetooth Device Name (BLE and SPP) =====
 #define BT_DEVICE_NAME "OSSRTK" // Name visible in BLE scanners / BT pairing list
 
-// ===== BLE Configuration (ROVER_TRANSPORT == TRANSPORT_BLE) =====
+// ===== BLE Configuration =====
 #define BLE_MTU_SIZE 185   // Maximum MTU (BLE supports up to ~185)
 #define BLE_CHUNK_SIZE 180 // Data chunk size to send (smaller than MTU)
 
@@ -66,5 +63,6 @@
 #define LINK_STATUS_LED_PIN 23 // Transport status LED on GPIO23 (active HIGH)
 #define LINK_LED_BLINK_MS 250  // LED blink period when not connected (250ms ON/OFF)
 #define NMEA_MAX_LENGTH 82     // Maximum NMEA sentence length
+#define BRIDGE_LOG_TRAFFIC 1   // Log every UART↔transport chunk (0 = quiet)
 
 #endif // CONFIG_H

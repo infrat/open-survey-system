@@ -1,7 +1,4 @@
 #include "config.h"
-
-#if ROVER_TRANSPORT == TRANSPORT_SPP
-
 #include "spp_serial_service.h"
 
 SPPSerialService *SPPSerialService::_instance = nullptr;
@@ -29,6 +26,24 @@ bool SPPSerialService::begin(const char *deviceName)
 
     // Connect/disconnect edges for logging and the status LED
     _serial.register_callback(&SPPSerialService::sppEventHandler);
+
+    // Mirror of BLEUARTService::begin(): this boot only uses Classic BT, so
+    // release the BLE half of the dual-mode controller and enable it
+    // Classic-only before BluetoothSerial gets to it.
+    esp_bt_controller_mem_release(ESP_BT_MODE_BLE);
+    esp_bt_controller_config_t btCfg = BT_CONTROLLER_INIT_CONFIG_DEFAULT();
+    btCfg.mode = ESP_BT_MODE_CLASSIC_BT;
+    esp_err_t err = esp_bt_controller_init(&btCfg);
+    if (err == ESP_OK)
+    {
+        err = esp_bt_controller_enable(ESP_BT_MODE_CLASSIC_BT);
+    }
+    if (err != ESP_OK)
+    {
+        if (_logCallback)
+            _logCallback("[SPP] Classic-only controller start failed [0x%X]", err);
+        return false;
+    }
 
     if (!_serial.begin(String(deviceName)))
     {
@@ -133,4 +148,3 @@ void SPPSerialService::sppEventHandler(esp_spp_cb_event_t event, esp_spp_cb_para
     }
 }
 
-#endif // ROVER_TRANSPORT == TRANSPORT_SPP

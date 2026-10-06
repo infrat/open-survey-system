@@ -2,16 +2,18 @@
 #define BLE_UART_SERVICE_H
 
 #include "config.h"
-
-#if ROVER_TRANSPORT == TRANSPORT_BLE
-
-#include <NimBLEDevice.h>
+#include <BLEDevice.h>
+#include <BLEServer.h>
+#include <BLEUtils.h>
+#include <BLE2902.h>
 #include "transport.h"
 
-// Legacy aliases - the transport-agnostic types live in transport.h
-typedef TransportLogCallback BLELogCallback;
-typedef TransportDataCallback BLEDataCallback;
-
+/**
+ * @brief BLE Nordic UART Service (NUS) side of the UART bridge.
+ *
+ * Runs on the Bluedroid stack (the same one SPP needs), so a single firmware
+ * image can offer either radio. Only one of them is brought up per boot.
+ */
 class BLEUARTService : public ITransport
 {
 public:
@@ -49,7 +51,7 @@ private:
 
     TransportDataCallback _dataCallback;
     TransportLogCallback _logCallback;
-    bool _deviceConnected;
+    volatile bool _deviceConnected;
 
     // Callback class for connections
     class ServerCallbacks : public BLEServerCallbacks
@@ -58,8 +60,8 @@ private:
         ServerCallbacks(BLEUARTService *service)
             : _service(service) {}
 
-        void onConnect(BLEServer *pServer);
-        void onDisconnect(BLEServer *pServer);
+        void onConnect(BLEServer *pServer) override;
+        void onDisconnect(BLEServer *pServer) override;
 
     private:
         BLEUARTService *_service;
@@ -72,7 +74,7 @@ private:
         RxCallbacks(BLEUARTService *service)
             : _service(service) {}
 
-        void onWrite(BLECharacteristic *pCharacteristic);
+        void onWrite(BLECharacteristic *pCharacteristic) override;
 
     private:
         BLEUARTService *_service;
@@ -82,5 +84,4 @@ private:
     friend class RxCallbacks;
 };
 
-#endif // ROVER_TRANSPORT == TRANSPORT_BLE
 #endif // BLE_UART_SERVICE_H

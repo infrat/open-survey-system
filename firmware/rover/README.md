@@ -2,7 +2,7 @@
 
 **ESP32 Firmware for GNSS RTK Rover**
 
-This is the main ESP32 firmware for the **Open Survey System (OSS)** - an open-source GNSS RTK rover designed for professional surveying and mapping applications. The firmware provides a bidirectional **UART ↔ Bluetooth bridge** to connect the GNSS RTK receiver with iOS/Android devices, over either **BLE** (Nordic UART Service, default) or **Bluetooth Classic SPP** (Android only) - see [Transport Selection](#transport-selection-ble-or-bluetooth-spp).
+This is the main ESP32 firmware for the **Open Survey System (OSS)** - an open-source GNSS RTK rover designed for professional surveying and mapping applications. The firmware bridges the GNSS RTK receiver's UART to iOS/Android devices over **BLE** (Nordic UART Service, default), **Bluetooth Classic SPP** (Android only) or a raw **WiFi TCP** socket. The link and the WiFi settings are chosen in a built-in **web UI** - see [Setup and Web UI](#setup-and-web-ui).
 
 ## Project Overview
 
@@ -14,51 +14,64 @@ The **Open Survey System RTK Rover** consists of three main components:
 
 This firmware handles:
 
-- ✅ Real-time NMEA/RTCM data streaming via BLE Nordic UART Service (NUS) or Bluetooth Classic SPP
+- ✅ Real-time NMEA/RTCM data streaming via BLE Nordic UART Service (NUS), Bluetooth Classic SPP or WiFi TCP
 - ✅ Bidirectional communication (corrections from mobile → GNSS)
-- ✅ Over-The-Air (OTA) firmware updates via WiFi
-- ✅ Power optimization for extended battery life
+- ✅ Web UI for choosing the link and configuring WiFi (AP / Station / AP + Station)
+- ✅ Over-The-Air (OTA) updates of firmware and web UI via WiFi
 - ✅ Status LED indication
 
-## Transport Selection (BLE or Bluetooth SPP)
+## Setup and Web UI
 
-The mobile-facing side of the bridge is chosen **at compile time** via `ROVER_TRANSPORT`. Only one Bluetooth host stack can run at a time (NimBLE and Bluedroid are mutually exclusive), so this is a build variant, not a runtime switch.
+### How the rover starts
 
-| Transport                 | PlatformIO env  | Stack     | iOS | Android | Flash   | Notes                           |
-| ------------------------- | --------------- | --------- | --- | ------- | ------- | ------------------------------- |
-| `TRANSPORT_BLE` (default) | `oss-rover`     | NimBLE    | ✅  | ✅      | ~1.08MB | Nordic UART Service, 185B MTU   |
-| `TRANSPORT_SPP`           | `oss-rover-spp` | Bluedroid | ❌  | ✅      | ~1.59MB | Plain byte stream, no MTU limit |
+WiFi and Bluetooth share a single radio and most of the ESP32's memory, so the rover never runs them together:
 
-```bash
-pio run -e oss-rover          # BLE build (default)
-pio run -e oss-rover-spp      # Bluetooth Classic SPP build
-```
+1. **Power-on → setup window.** Only WiFi is up, with the web UI, OTA and Telnet. The LED gives a short flash once per second.
+2. **Nobody opens the web UI within the window (30 s by default)** → WiFi switches off and the Bluetooth link starts. No restart needed.
+3. **Someone is using the web UI** → the rover stays in setup mode. Close the page or press **Start Bluetooth now** to finish.
 
-The default lives in `include/config.h` and each env overrides it with a build flag:
+Only real use keeps WiFi on: an open and recently used web UI page, an OTA transfer or a Telnet session. A phone that merely joins the rover's WiFi does not. To get WiFi back, restart the rover.
 
-```cpp
-#define TRANSPORT_BLE 0
-#define TRANSPORT_SPP 1
+With the **WiFi (TCP)** link there is no Bluetooth: WiFi stays on and the data link is available right after boot.
 
-#ifndef ROVER_TRANSPORT
-#define ROVER_TRANSPORT TRANSPORT_BLE
-#endif
-```
+### Reaching the web UI
 
-```ini
-build_flags = -DROVER_TRANSPORT=TRANSPORT_SPP
-```
+- On your network: `http://ossrtk.local` (or the rover's IP address)
+- On the rover's own access point `OSSRTK-XXXX`: `http://192.168.4.1`
 
-**⚠️ iOS cannot use SPP.** Bluetooth Classic SPP is not available to third-party iOS apps without MFi certification. Keep the BLE build for any iPhone/iPad workflow.
+The UI has three tabs:
 
-**Trade-offs of the SPP build:**
+| Tab            | What it does                                                                                 |
+| -------------- | -------------------------------------------------------------------------------------------- |
+| **Status**     | Active link, client connection, WiFi addresses, time left in the setup window, firmware, heap |
+| **Connection** | Choose Bluetooth LE, Bluetooth SPP or WiFi (TCP) and the TCP port                              |
+| **WiFi**       | Access point / Station / AP + Station, network scan, credentials, setup window length          |
 
-- **Throughput**: higher - no 185-byte MTU and no 10ms inter-chunk delay; `BluetoothSerial` queues the payload and fragments it in its own TX task
-- **Power**: worse - Bluetooth Classic keeps a far more expensive link up than BLE at -9dBm, so the ~20-30h battery estimate no longer holds
-- **Flash/RAM**: Bluedroid + SPP costs roughly +500KB flash over NimBLE (80.7% vs 55.2% of the 1.92MB app partition) and more runtime heap - watch `status` over Telnet for free heap
-- **Pairing**: SPP requires the phone to pair with `OSSRTK` first, then open the serial port; BLE just connects
+**Save & Restart** stores the settings in flash (NVS) and reboots the rover.
 
-Adding a new transport means implementing `ITransport` (see `src/transport.h`) and adding a branch to `src/rover_transport.h` - `main.cpp` stays untouched.
+### Client links
+
+| Link                   | iOS | Android | Notes                                                        |
+| ---------------------- | --- | ------- | ------------------------------------------------------------ |
+| Bluetooth LE (default) | ✅  | ✅      | Nordic UART Service, 185B MTU                                |
+| Bluetooth SPP          | ❌  | ✅      | Plain serial stream, pair with `OSSRTK` first                |
+| WiFi (TCP)             | ✅  | ✅      | `ossrtk.local:10110` by default, up to 2 clients, WiFi stays on |
+
+**⚠️ iOS cannot use SPP.** Bluetooth Classic SPP is not available to third-party iOS apps without MFi certification.
+
+### WiFi modes
+
+| Mode                   | Behavior                                                             |
+| ---------------------- | -------------------------------------------------------------------- |
+| Access point           | The rover creates its own network `OSSRTK-XXXX` (open unless you set a password) |
+| Station                | The rover joins your network                                         |
+| AP + Station (default) | Both at once                                                         |
+
+If the rover cannot join the configured network within 10 seconds, it falls back to its own access point so the web UI stays reachable.
+
+**⚠️ The web UI has no login and the default access point is open.** Set an access point password before using the rover around other people.
+
+Adding a new link means implementing `ITransport` (see `src/transport.h`) and adding a branch to `src/transport_factory.cpp`.
 
 ## Hardware Components
 
@@ -79,111 +92,100 @@ UART1_RX        <-- GPIO27 (TX - corrections to GNSS)
 - Data: 8N1 (8 bits, no parity, 1 stop bit)
 - Flow Control: None
 
-## Power Optimization Features
+## Power Saving
 
-The firmware implements aggressive power-saving to maximize battery life:
+### WiFi setup window
 
-### Dynamic CPU Frequency Scaling
+- WiFi is only on during the setup window after power-on (30 s by default, 15-600 s in the web UI), then it is switched off
+- With the WiFi (TCP) link WiFi stays on permanently and the rover draws correspondingly more
 
-- **Idle Mode**: 80MHz when no data transfer (~30mA saved)
-- **Active Mode**: 240MHz during GNSS data streaming
-- **Auto-switching**: 100ms threshold
+### Bluetooth low power mode
 
-### WiFi Auto-Shutdown
-
-- WiFi **active for 3 minutes** after boot (for OTA updates)
-- **Auto-disable** after timeout (~100mA saved)
-- Total WiFi-off power: **~105mA** (down from 250mA)
-
-### Bluetooth Low Power Mode
-
-- TX Power: **-9dBm** (`BLE_TX_POWER` / `SPP_TX_POWER`, reduced from +9dBm)
+- TX Power: **-9dBm** (`BLE_TX_POWER` / `SPP_TX_POWER`)
 - Range: ~10-15m (sufficient for rover-to-mobile)
-- Power saving: **~15mA** on the BLE build
-- The SPP build applies the same TX level via `esp_bredr_tx_power_set()`, but Bluetooth Classic still draws noticeably more than BLE
+- Bluetooth Classic (SPP) draws noticeably more than BLE
 
-### Total Power Savings
-
-- **Active (data streaming)**: ~250mA
-- **Idle (WiFi off, low BLE)**: ~105mA
-- **Battery life**: ~20-30 hours (with 3000mAh battery)
+Current draw has not been re-measured for this firmware revision.
 
 ## Mobile App Compatibility
 
-### Recommended iOS Apps (BLE build only)
+### Recommended iOS Apps (Bluetooth LE or WiFi TCP link)
 
 1. **Lefebure NTRIP Client** - Professional RTK/NTRIP app
 2. **SW Maps** - Survey and mapping with NTRIP support
 3. **nRF Toolbox** (Nordic) - Testing NUS connection
 
-### Android Apps (both builds)
+### Android Apps (any link)
 
 1. **Lefebure NTRIP Client**
 2. **Mobile Topographer**
-3. **Serial Bluetooth Terminal** - works against the SPP build (pair first) and against the BLE build in BLE mode
+3. **Serial Bluetooth Terminal** - works with the SPP link (pair first) and with the BLE link in BLE mode
 
 ## Building and Uploading
+
+Run the commands from the repository root. `oss-rover-usb` flashes over serial, `oss-rover` over WiFi - both build the same image.
 
 ### First Upload (via USB)
 
 ```bash
-# Build firmware (BLE default; use -e oss-rover-spp for the SPP variant)
-pio run -e oss-rover
+# Firmware
+pio run -e oss-rover-usb -t upload
 
-# Upload via USB
-pio run -e oss-rover --target upload
+# Web UI files (LittleFS)
+pio run -e oss-rover-usb -t uploadfs
 
 # Monitor serial output
 pio device monitor
 ```
 
+A USB flash is also needed when upgrading from a firmware older than 2.0.0, because the partition table changed.
+
 ### OTA Updates (via WiFi)
 
-After initial USB upload, you can update wirelessly:
-
 ```bash
-# Ensure ESP32 is powered on and WiFi is active (first 3 minutes)
-pio run -t upload
-
-# Firmware will be sent to: ossrtk.local
+pio run -e oss-rover -t upload      # firmware -> ossrtk.local
+pio run -e oss-rover -t uploadfs    # web UI
 # OTA password: admin (configurable in config.h)
 ```
 
-**Important**: WiFi is only active for **3 minutes after boot** to save power. For OTA updates:
+**Important**: OTA only works during the setup window after power-on.
 
-1. Reboot the rover
-2. Wait for WiFi connection (check serial logs or LED)
-3. Upload within 3 minutes
-4. WiFi auto-disables after timeout
+1. Restart the rover
+2. Open `http://ossrtk.local` - an open web UI page keeps WiFi on
+3. Run the upload
+4. Close the page or press **Start Bluetooth now** when done
 
 ## Configuration
 
-Edit `include/config.h` to customize:
+Day-to-day settings (client link, TCP port, WiFi mode and credentials, setup window length) are changed in the **web UI** and stored in flash. `include/config.h` holds the compile-time parameters and the factory defaults:
 
 ### UART Settings (GNSS)
 
-```cppe GPS_RX_PIN 25           // GNSS TX → ESP32 RX
+```cpp
+#define GPS_RX_PIN 25           // GNSS TX → ESP32 RX
 #define GPS_TX_PIN 27           // ESP32 TX → GNSS RX
 #define GPS_BAUD_RATE 115200    // LC29H DA baud rate
 #define UART_BUF_SIZE 1024      // UART buffer (1KB)
 ```
 
-### WiFi/OTA Settings
+### WiFi/OTA Settings (factory defaults)
 
 ```cpp
-#define WIFI_SSID "YourNetwork"
+#define DEFAULT_TRANSPORT_MODE 0       // 0 = BLE, 1 = Bluetooth SPP, 2 = WiFi TCP
+#define DEFAULT_WIFI_MODE 2            // 0 = AP, 1 = STA, 2 = AP+STA
+#define DEFAULT_SETUP_WINDOW_SEC 30    // WiFi-only setup window after boot
+#define WIFI_SSID "YourNetwork"        // default network to join
 #define WIFI_PASSWORD "YourPassword"
 #define OTA_HOSTNAME "ossrtk"          // ossrtk.local
 #define OTA_PASSWORD "admin"
-#define WIFI_ACTIVE_TIME_MS 180000     // 3 minutes
+#define TCP_PORT_DEFAULT 10110         // NMEA-0183 over TCP
 ```
 
 ### Power Saving
 
 ```cpp
-#define BLE_TX_POWER ESP_PWR_LVL_N9    // -9dBm (low power, BLE build)
-#define SPP_TX_POWER ESP_PWR_LVL_N9    // -9dBm (low power, SPP build)
-#define CPU_FREQ_ACTIVE 240            // MHz when streaming
+#define BLE_TX_POWER ESP_PWR_LVL_N9    // -9dBm (low power, BLE)
+#define SPP_TX_POWER ESP_PWR_LVL_N9    // -9dBm (low power, SPP)
 ```
 
 ### Bluetooth Settings
@@ -191,7 +193,7 @@ Edit `include/config.h` to customize:
 ```cpp
 #define BT_DEVICE_NAME "OSSRTK"        // BLE scanner name / BT pairing name
 
-// BLE build only:
+// BLE link only:
 #define BLE_MTU_SIZE 185               // iOS max MTU
 #define BLE_CHUNK_SIZE 180             // Chunk size for large packets
 ```
@@ -211,39 +213,36 @@ The firmware implements the standard Nordic UART Service for maximum compatibili
 Service UUID:  6E400001-B5A3-F393-E0A9-E50E24DCCA9E
 RX Char UUID:  6E400002-B5A3-F393-E0A9-E50E24DCCA9E  (Mobile → ESP32 → GNSS)
 TX Char UUID:  6E400003-B5A3-F393-E0A9-E50E24DCCA9E  (GNSS → ESP32 → Mobile)
+```
 
 ## Debugging and Monitoring
 
 ### Serial Monitor (USB - 115200 baud)
 
 ```
-
 ========================================
-ESP32 UART-BLE Bridge
-GPS (NMEA) ↔ iOS via Nordic UART Service
+OSS RTK Rover 2.0.0
+GPS (NMEA) ↔ UART bridge
 ========================================
 
-[Setup] Connecting to WiFi...
-[WiFi] Connected!
-[WiFi] IP Address: 192.168.1.100
-[WiFi] Will auto-disable after 180 seconds
-[OTA] Ready for firmware updates
-[OTA] Hostname: ossrtk.local
-[Setup] Initializing UART...
+[Setup] Transport: BLE, WiFi mode: sta, setup window: 30 s
+[WiFi] Connecting to "YourNetwork"...
+[WiFi] Setup window: off after 30 s without web UI / OTA / Telnet use
+[Web] UI on port 80
 [UART] Initialized GPS UART
 [UART] RX: GPIO25, TX: GPIO27, Baud: 115200
+[Setup] Setup window open: WiFi only, BLE starts when it closes
+[OTA] Ready for firmware updates
+[Telnet] Server started on port 23
+...
+[WiFi] Setup window closed - switching WiFi off
 [Setup] Initializing BLE...
 [BLE] Nordic UART Service started
-[BLE] TX Power set to -12dBm (low power mode)
 [BLE] Device name: OSSRTK
-[Power] CPU frequency: 80 MHz (idle mode)
-[Setup] Initialization complete!
-
-Waiting for GPS data and iOS connection...
-
+Waiting for GPS data and client connection...
 ```
 
-```
+The same log is available over Telnet (`telnet ossrtk.local`) during the setup window.
 
 **Data Flow:**
 
@@ -254,6 +253,7 @@ Waiting for GPS data and iOS connection...
 
 | Pattern                   | Status                                  |
 | ------------------------- | --------------------------------------- |
+| **Short flash every 1s**  | Setup window: WiFi only, link not started yet |
 | **Blinking (250ms)**      | Waiting for a mobile connection         |
 | **Solid ON**              | Mobile device connected                 |
 | **Fast blinking (100ms)** | Error - UART init failed                |
@@ -273,7 +273,7 @@ LC29H DA RX (pin 4) → ESP32 GPIO27 (TX)
 **Verify in Serial Monitor:**
 
 - Look for `[UART] Initialized GPS UART`
-- Should see `[Bridge] UART → BLE: XX bytes` when GNSS is outputting data
+- Should see `[Bridge] UART → BLE: XX bytes` (or SPP/TCP) when GNSS is outputting data, once the link has started
 
 **LC29H DA Configuration:**
 
@@ -283,27 +283,28 @@ LC29H DA RX (pin 4) → ESP32 GPIO27 (TX)
 
 ### Mobile App Can't Connect
 
-**Verify the transport is running:**
+**Wait for the setup window to end.** For the first 30 seconds after power-on (or as long as the web UI is open) only WiFi is running and the rover is not visible over Bluetooth. The LED switches from a short flash every second to an even blink when the link is up.
 
-- BLE build: serial log shows `[BLE] Nordic UART Service started`
-- SPP build: serial log shows `[SPP] Serial Port Profile server started`
+**Verify the link is running:**
+
+- Bluetooth LE: serial log shows `[BLE] Nordic UART Service started`
+- Bluetooth SPP: serial log shows `[SPP] Serial Port Profile server started`
 - Device name: `OSSRTK`
-- LED is blinking (waiting for connection)
 
-**On mobile device (BLE build):**
+**On mobile device (Bluetooth LE):**
 
 1. Enable Bluetooth
 2. Scan for `OSSRTK`
-3. Connect (should see `[BLE] iOS device connected!` in logs)
+3. Connect (should see `[BLE] Device connected!` in logs)
 4. LED should become solid ON
 
-**On mobile device (SPP build, Android):**
+**On mobile device (Bluetooth SPP, Android):**
 
 1. Pair with `OSSRTK` in the Android Bluetooth settings first
 2. Open the serial port from the app (should see `[SPP] Client connected!` in logs)
 3. LED should become solid ON
 
-If an iPhone cannot see or connect to the rover, check which variant is flashed - the SPP build is invisible to iOS apps.
+If an iPhone cannot see or connect to the rover, check which link is selected in the web UI - SPP is invisible to iOS apps.
 
 **Use BLE Scanner app** to verify device is advertising with correct UUIDs
 
@@ -317,34 +318,18 @@ If an iPhone cannot see or connect to the rover, check which variant is flashed 
 - Base station <40km away for RTK
 - Wait 30-120s for RTK convergence
 
+### Web UI Not Reachable
+
+- WiFi is only on during the setup window. Restart the rover and open the page within 30 seconds.
+- If the rover cannot join your network, it opens its own access point `OSSRTK-XXXX` after about 10 seconds; connect to it and open `http://192.168.4.1`.
+- If the page shows "Web UI files not found", upload the filesystem: `pio run -e oss-rover-usb -t uploadfs`.
+
 ### OTA Update Failed
 
-**WiFi only active for 3 minutes after boot:**
-
-1. Power cycle the rover
-2. Watch serial logs for WiFi connection
-3. Run `pio run -t upload` within 3 minutes
-4. Check `ossrtk.local` is reachable: `ping ossrtk.local`
-
-**If OTA still fails:**
-
-- Verify WiFi credentials in `config.h`
-- Check firewall isn't blocking mDNS/port 3232
-- Use IP address instead: `upload_port = 192.168.1.100`
-
-### High Power Consumption
-
-**Expected power draw:**
-
-- **With WiFi ON**: ~250mA (first 3 minutes only)
-- **Idle (no data)**: ~105mA
-- **Active streaming**: ~140-180mA
-
-**If higher than expected:**
-
-- Check WiFi auto-disabled after 3 min (`[WiFi] Auto-shutdown` log)
-- Verify CPU frequency scaling (`[Power] CPU frequency: 80 MHz`)
-- Ensure BLE TX power is -12dBm (`[BLE] TX Power set to -12dBm`)
+- Start the upload inside the setup window; the easiest way is to keep the web UI open while uploading.
+- Check `ossrtk.local` is reachable: `ping ossrtk.local`
+- Check the firewall isn't blocking mDNS/port 3232
+- Use the IP address instead: `upload_port = 192.168.1.100`
 
 ## Example NMEA/RTCM Data
 
@@ -368,44 +353,50 @@ Sent from NTRIP caster via mobile app through BLE
 ```
 firmware/rover/
 ├── include/
-│   └── config.h                 # Main configuration (transport, pins, WiFi, power)
+│   └── config.h                 # Compile-time parameters and factory defaults
+├── data/                        # Web UI (index.html, style.css, app.js) -> LittleFS
+├── partitions.csv               # 2 x 1.81MB OTA slots + 256KB LittleFS
 ├── src/
-│   ├── main.cpp                 # Main firmware logic (transport-agnostic)
+│   ├── main.cpp                 # Setup + loop, setup window -> link hand-over
+│   ├── settings.cpp/h           # Runtime settings, stored in NVS
+│   ├── wifi_manager.cpp/h       # AP / STA / AP+STA, setup window
+│   ├── web_server.cpp/h         # Web UI + REST API
+│   ├── ota_service.cpp/h        # ArduinoOTA + mDNS
+│   ├── telnet_service.cpp/h     # Remote log console
+│   ├── logger.cpp/h             # Serial + Telnet logging
+│   ├── system_control.cpp/h     # Deferred restart
+│   ├── bridge.cpp/h             # GNSS UART <-> link, status LED
 │   ├── uart_handler.cpp/h       # UART communication with LC29H DA
-│   ├── transport.h              # ITransport interface (no Bluetooth includes)
-│   ├── rover_transport.h        # Compile-time transport selection
-│   ├── ble_uart_service.cpp/h   # BLE NUS implementation (NimBLE)
-│   └── spp_serial_service.cpp/h # Bluetooth Classic SPP implementation
+│   ├── transport.h              # ITransport interface
+│   ├── transport_factory.cpp/h  # Creates the link selected in settings
+│   ├── ble_uart_service.cpp/h   # BLE NUS (Bluedroid)
+│   ├── spp_serial_service.cpp/h # Bluetooth Classic SPP (Bluedroid)
+│   └── tcp_transport.cpp/h      # Raw TCP server
 ├── platformio.ini               # Standalone PlatformIO configuration
 └── README.md                    # This file
 ```
-
-Both implementations are compiled from the same source tree; the unused one is guarded out with `#if ROVER_TRANSPORT == ...` so it becomes an empty translation unit.
 
 ## Dependencies
 
 - **Platform**: Espressif32 (PlatformIO)
 - **Framework**: Arduino
 - **Libraries**:
-  - `NimBLE-Arduino` v1.4.0+ (h2zero) - Lightweight BLE stack (BLE build only)
-  - `BluetoothSerial` - Framework-bundled Bluedroid SPP wrapper (SPP build only)
-  - Built-in: WiFi, ArduinoOTA, esp_bt
+  - `ESPAsyncWebServer` 3.7.10 + `AsyncTCP` 3.4.10 (ESP32Async) - web UI and REST API
+  - `ArduinoJson` 6.21.6
+  - Framework-bundled: BLE, BluetoothSerial (both Bluedroid), WiFi, LittleFS, Preferences, ESPmDNS, ArduinoOTA
 
 ## Technical Specifications
 
 | Parameter           | Value                                         |
 | ------------------- | --------------------------------------------- |
 | **UART Speed**      | 115200 baud                                   |
-| **Transport**       | BLE NUS (default) or BT Classic SPP           |
+| **Client link**     | BLE NUS (default), BT Classic SPP or WiFi TCP |
 | **BLE Range**       | ~10-15m (-9dBm TX power)                      |
 | **BLE MTU**         | 185 bytes (iOS max)                           |
-| **Data Chunk Size** | 180 bytes (BLE packet); SPP streams unchunked |
-| **WiFi OTA Window** | 3 minutes after boot                          |
-| **CPU Frequency**   | 80MHz idle / 240MHz active                    |
-| **Power (idle)**    | ~105mA @ 3.3V                                 |
-| **Power (active)**  | ~140-180mA @ 3.3V                             |
-| **Flash Usage**     | ~1.0MB / 4MB (25%)                            |
-| **RAM Usage**       | ~59KB / 320KB (18%)                           |
+| **Data Chunk Size** | 180 bytes (BLE packet); SPP/TCP unchunked     |
+| **WiFi**            | Setup window after boot (default 30 s)        |
+| **Flash Usage**     | ~1.76MB of a 1.81MB app slot (4MB flash)      |
+| **Free heap**       | ~125KB in the setup window                    |
 
 ## Contributing
 
@@ -422,7 +413,6 @@ MIT License - Free for personal and commercial use
 ## Acknowledgments
 
 - **Nordic Semiconductor** - Nordic UART Service specification
-- **h2zero** - NimBLE-Arduino lightweight BLE library
 - **Espressif Systems** - ESP32 platform
 - **Quectel** - LC29H DA GNSS module documentation
 - **Open Survey System Community** - Testing and feedback
