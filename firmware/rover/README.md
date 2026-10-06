@@ -2,7 +2,7 @@
 
 **ESP32 Firmware for GNSS RTK Rover**
 
-This is the main ESP32 firmware for the **Open Survey System (OSS)** - an open-source GNSS RTK rover designed for professional surveying and mapping applications. The firmware provides a bidirectional **UART ↔ BLE bridge** to connect the GNSS RTK receiver with iOS/Android devices.
+This is the main ESP32 firmware for the **Open Survey System (OSS)** - an open-source GNSS RTK rover designed for professional surveying and mapping applications. The firmware provides a bidirectional **UART ↔ Bluetooth bridge** to connect the GNSS RTK receiver with iOS/Android devices, over either **BLE** (Nordic UART Service, default) or **Bluetooth Classic SPP** (Android only) - see [Transport Selection](#transport-selection-ble-or-bluetooth-spp).
 
 ## Project Overview
 
@@ -14,11 +14,51 @@ The **Open Survey System RTK Rover** consists of three main components:
 
 This firmware handles:
 
-- ✅ Real-time NMEA/RTCM data streaming via BLE Nordic UART Service (NUS)
+- ✅ Real-time NMEA/RTCM data streaming via BLE Nordic UART Service (NUS) or Bluetooth Classic SPP
 - ✅ Bidirectional communication (corrections from mobile → GNSS)
 - ✅ Over-The-Air (OTA) firmware updates via WiFi
 - ✅ Power optimization for extended battery life
 - ✅ Status LED indication
+
+## Transport Selection (BLE or Bluetooth SPP)
+
+The mobile-facing side of the bridge is chosen **at compile time** via `ROVER_TRANSPORT`. Only one Bluetooth host stack can run at a time (NimBLE and Bluedroid are mutually exclusive), so this is a build variant, not a runtime switch.
+
+| Transport                 | PlatformIO env  | Stack     | iOS | Android | Flash   | Notes                           |
+| ------------------------- | --------------- | --------- | --- | ------- | ------- | ------------------------------- |
+| `TRANSPORT_BLE` (default) | `oss-rover`     | NimBLE    | ✅  | ✅      | ~1.08MB | Nordic UART Service, 185B MTU   |
+| `TRANSPORT_SPP`           | `oss-rover-spp` | Bluedroid | ❌  | ✅      | ~1.59MB | Plain byte stream, no MTU limit |
+
+```bash
+pio run -e oss-rover          # BLE build (default)
+pio run -e oss-rover-spp      # Bluetooth Classic SPP build
+```
+
+The default lives in `include/config.h` and each env overrides it with a build flag:
+
+```cpp
+#define TRANSPORT_BLE 0
+#define TRANSPORT_SPP 1
+
+#ifndef ROVER_TRANSPORT
+#define ROVER_TRANSPORT TRANSPORT_BLE
+#endif
+```
+
+```ini
+build_flags = -DROVER_TRANSPORT=TRANSPORT_SPP
+```
+
+**⚠️ iOS cannot use SPP.** Bluetooth Classic SPP is not available to third-party iOS apps without MFi certification. Keep the BLE build for any iPhone/iPad workflow.
+
+**Trade-offs of the SPP build:**
+
+- **Throughput**: higher - no 185-byte MTU and no 10ms inter-chunk delay; `BluetoothSerial` queues the payload and fragments it in its own TX task
+- **Power**: worse - Bluetooth Classic keeps a far more expensive link up than BLE at -9dBm, so the ~20-30h battery estimate no longer holds
+- **Flash/RAM**: Bluedroid + SPP costs roughly +500KB flash over NimBLE (80.7% vs 55.2% of the 1.92MB app partition) and more runtime heap - watch `status` over Telnet for free heap
+- **Pairing**: SPP requires the phone to pair with `OSSRTK` first, then open the serial port; BLE just connects
+
+Adding a new transport means implementing `ITransport` (see `src/transport.h`) and adding a branch to `src/rover_transport.h` - `main.cpp` stays untouched.
 
 ## Hardware Components
 
@@ -55,11 +95,12 @@ The firmware implements aggressive power-saving to maximize battery life:
 - **Auto-disable** after timeout (~100mA saved)
 - Total WiFi-off power: **~105mA** (down from 250mA)
 
-### BLE Low Power Mode
+### Bluetooth Low Power Mode
 
-- TX Power: **-12dBm** (reduced from +9dBm)
+- TX Power: **-9dBm** (`BLE_TX_POWER` / `SPP_TX_POWER`, reduced from +9dBm)
 - Range: ~10-15m (sufficient for rover-to-mobile)
-- Power saving: **~15mA**
+- Power saving: **~15mA** on the BLE build
+- The SPP build applies the same TX level via `esp_bredr_tx_power_set()`, but Bluetooth Classic still draws noticeably more than BLE
 
 ### Total Power Savings
 
@@ -69,29 +110,28 @@ The firmware implements aggressive power-saving to maximize battery life:
 
 ## Mobile App Compatibility
 
-### Recommended iOS Apps
+### Recommended iOS Apps (BLE build only)
 
 1. **Lefebure NTRIP Client** - Professional RTK/NTRIP app
 2. **SW Maps** - Survey and mapping with NTRIP support
 3. **nRF Toolbox** (Nordic) - Testing NUS connection
-4. **Serial Bluetooth Terminal** - Debug and testing
 
-### Android Apps
+### Android Apps (both builds)
 
 1. **Lefebure NTRIP Client**
 2. **Mobile Topographer**
-3. **Serial Bluetooth Terminal**
+3. **Serial Bluetooth Terminal** - works against the SPP build (pair first) and against the BLE build in BLE mode
 
 ## Building and Uploading
 
 ### First Upload (via USB)
 
 ```bash
-# Build firmware
-pio run
+# Build firmware (BLE default; use -e oss-rover-spp for the SPP variant)
+pio run -e oss-rover
 
 # Upload via USB
-pio run --target upload
+pio run -e oss-rover --target upload
 
 # Monitor serial output
 pio device monitor
@@ -141,15 +181,17 @@ Edit `include/config.h` to customize:
 ### Power Saving
 
 ```cpp
-#define BLE_TX_POWER ESP_PWR_LVL_N12   // -12dBm (low power)
+#define BLE_TX_POWER ESP_PWR_LVL_N9    // -9dBm (low power, BLE build)
+#define SPP_TX_POWER ESP_PWR_LVL_N9    // -9dBm (low power, SPP build)
 #define CPU_FREQ_ACTIVE 240            // MHz when streaming
-#define CPU_FREQ_IDLE 80               // MHz when idle
 ```
 
-### BLE Settings
+### Bluetooth Settings
 
 ```cpp
-#define BLE_DEVICE_NAME "OSSRTK"
+#define BT_DEVICE_NAME "OSSRTK"        // BLE scanner name / BT pairing name
+
+// BLE build only:
 #define BLE_MTU_SIZE 185               // iOS max MTU
 #define BLE_CHUNK_SIZE 180             // Chunk size for large packets
 ```
@@ -157,8 +199,8 @@ Edit `include/config.h` to customize:
 ### Status LED
 
 ```cpp
-#define BLE_STATUS_LED_PIN 23          // GPIO23 (active HIGH)
-#define BLE_LED_BLINK_MS 250           // Blink period when disconnected
+#define LINK_STATUS_LED_PIN 23         // GPIO23 (active HIGH)
+#define LINK_LED_BLINK_MS 250          // Blink period when disconnected
 ```
 
 ## Nordic UART Service (NUS) UUIDs
@@ -210,12 +252,12 @@ Waiting for GPS data and iOS connection...
 
 ### Status LED Patterns
 
-| Pattern                   | Status                     |
-| ------------------------- | -------------------------- |
-| **Blinking (250ms)**      | Waiting for BLE connection |
-| **Solid ON**              | Mobile device connected    |
-| **Fast blinking (100ms)** | Error - UART init failed   |
-| **Fast blinking (200ms)** | Error - BLE init failed    |
+| Pattern                   | Status                                  |
+| ------------------------- | --------------------------------------- |
+| **Blinking (250ms)**      | Waiting for a mobile connection         |
+| **Solid ON**              | Mobile device connected                 |
+| **Fast blinking (100ms)** | Error - UART init failed                |
+| **Fast blinking (200ms)** | Error - transport (BLE/SPP) init failed |
 
 ## Troubleshooting
 
@@ -241,18 +283,27 @@ LC29H DA RX (pin 4) → ESP32 GPIO27 (TX)
 
 ### Mobile App Can't Connect
 
-**Verify BLE is running:**
+**Verify the transport is running:**
 
-- Serial log shows: `[BLE] Nordic UART Service started`
+- BLE build: serial log shows `[BLE] Nordic UART Service started`
+- SPP build: serial log shows `[SPP] Serial Port Profile server started`
 - Device name: `OSSRTK`
 - LED is blinking (waiting for connection)
 
-**On mobile device:**
+**On mobile device (BLE build):**
 
 1. Enable Bluetooth
 2. Scan for `OSSRTK`
 3. Connect (should see `[BLE] iOS device connected!` in logs)
 4. LED should become solid ON
+
+**On mobile device (SPP build, Android):**
+
+1. Pair with `OSSRTK` in the Android Bluetooth settings first
+2. Open the serial port from the app (should see `[SPP] Client connected!` in logs)
+3. LED should become solid ON
+
+If an iPhone cannot see or connect to the rover, check which variant is flashed - the SPP build is invisible to iOS apps.
 
 **Use BLE Scanner app** to verify device is advertising with correct UUIDs
 
@@ -315,39 +366,46 @@ Sent from NTRIP caster via mobile app through BLE
 ## Project Structure
 
 ```
-esp32-uart-ble/
+firmware/rover/
 ├── include/
-│   └── config.h              # Main configuration (pins, WiFi, power)
+│   └── config.h                 # Main configuration (transport, pins, WiFi, power)
 ├── src/
-│   ├── main.cpp              # Main firmware logic
-│   ├── uart_handler.cpp/h    # UART communication with LC29H DA
-│   └── ble_uart_service.cpp/h # BLE NUS implementation
-├── platformio.ini            # PlatformIO configuration
-└── README.md                 # This file
+│   ├── main.cpp                 # Main firmware logic (transport-agnostic)
+│   ├── uart_handler.cpp/h       # UART communication with LC29H DA
+│   ├── transport.h              # ITransport interface (no Bluetooth includes)
+│   ├── rover_transport.h        # Compile-time transport selection
+│   ├── ble_uart_service.cpp/h   # BLE NUS implementation (NimBLE)
+│   └── spp_serial_service.cpp/h # Bluetooth Classic SPP implementation
+├── platformio.ini               # Standalone PlatformIO configuration
+└── README.md                    # This file
 ```
+
+Both implementations are compiled from the same source tree; the unused one is guarded out with `#if ROVER_TRANSPORT == ...` so it becomes an empty translation unit.
 
 ## Dependencies
 
 - **Platform**: Espressif32 (PlatformIO)
 - **Framework**: Arduino
 - **Libraries**:
-  - `NimBLE-Arduino` v1.4.0+ (h2zero) - Lightweight BLE stack
+  - `NimBLE-Arduino` v1.4.0+ (h2zero) - Lightweight BLE stack (BLE build only)
+  - `BluetoothSerial` - Framework-bundled Bluedroid SPP wrapper (SPP build only)
   - Built-in: WiFi, ArduinoOTA, esp_bt
 
 ## Technical Specifications
 
-| Parameter           | Value                      |
-| ------------------- | -------------------------- |
-| **UART Speed**      | 115200 baud                |
-| **BLE Range**       | ~10-15m (-12dBm TX power)  |
-| **BLE MTU**         | 185 bytes (iOS max)        |
-| **Data Chunk Size** | 180 bytes (BLE packet)     |
-| **WiFi OTA Window** | 3 minutes after boot       |
-| **CPU Frequency**   | 80MHz idle / 240MHz active |
-| **Power (idle)**    | ~105mA @ 3.3V              |
-| **Power (active)**  | ~140-180mA @ 3.3V          |
-| **Flash Usage**     | ~1.0MB / 4MB (25%)         |
-| **RAM Usage**       | ~59KB / 320KB (18%)        |
+| Parameter           | Value                                         |
+| ------------------- | --------------------------------------------- |
+| **UART Speed**      | 115200 baud                                   |
+| **Transport**       | BLE NUS (default) or BT Classic SPP           |
+| **BLE Range**       | ~10-15m (-9dBm TX power)                      |
+| **BLE MTU**         | 185 bytes (iOS max)                           |
+| **Data Chunk Size** | 180 bytes (BLE packet); SPP streams unchunked |
+| **WiFi OTA Window** | 3 minutes after boot                          |
+| **CPU Frequency**   | 80MHz idle / 240MHz active                    |
+| **Power (idle)**    | ~105mA @ 3.3V                                 |
+| **Power (active)**  | ~140-180mA @ 3.3V                             |
+| **Flash Usage**     | ~1.0MB / 4MB (25%)                            |
+| **RAM Usage**       | ~59KB / 320KB (18%)                           |
 
 ## Contributing
 

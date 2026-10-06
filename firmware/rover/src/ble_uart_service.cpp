@@ -1,3 +1,8 @@
+#include "config.h"
+
+#if ROVER_TRANSPORT == TRANSPORT_BLE
+
+#include <esp_bt.h>
 #include "ble_uart_service.h"
 
 BLEUARTService::BLEUARTService()
@@ -57,6 +62,17 @@ bool BLEUARTService::begin(const char *deviceName)
     return true;
 }
 
+void BLEUARTService::setTxPower()
+{
+    // Low power mode - range drops to ~10-15m, which is enough rover → phone
+    esp_ble_tx_power_set(ESP_BLE_PWR_TYPE_DEFAULT, BLE_TX_POWER);
+    esp_ble_tx_power_set(ESP_BLE_PWR_TYPE_ADV, BLE_TX_POWER);
+    esp_ble_tx_power_set(ESP_BLE_PWR_TYPE_SCAN, BLE_TX_POWER);
+
+    if (_logCallback)
+        _logCallback("[BLE] TX Power set to low power mode (BLE_TX_POWER=%d)", (int)BLE_TX_POWER);
+}
+
 void BLEUARTService::sendData(const uint8_t *data, size_t length)
 {
     if (_deviceConnected && _pTxCharacteristic && length > 0)
@@ -91,12 +107,12 @@ void BLEUARTService::sendString(const char *str)
     }
 }
 
-void BLEUARTService::setDataCallback(BLEDataCallback callback)
+void BLEUARTService::setDataCallback(TransportDataCallback callback)
 {
     _dataCallback = callback;
 }
 
-void BLEUARTService::setLogCallback(BLELogCallback callback)
+void BLEUARTService::setLogCallback(TransportLogCallback callback)
 {
     _logCallback = callback;
 }
@@ -163,3 +179,5 @@ void BLEUARTService::RxCallbacks::onWrite(BLECharacteristic *pCharacteristic)
         }
     }
 }
+
+#endif // ROVER_TRANSPORT == TRANSPORT_BLE

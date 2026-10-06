@@ -4,7 +4,7 @@
 #include <time.h>
 #include "config.h"
 #include "uart_handler.h"
-#include "ble_uart_service.h"
+#include "rover_transport.h"
 
 // Telnet server for remote debugging
 WiFiServer telnetServer(23);
@@ -12,7 +12,10 @@ WiFiClient telnetClient;
 
 // Global objects
 UARTHandler uartHandler;
-BLEUARTService bleService;
+
+// Mobile-facing transport: BLE NUS or Bluetooth Classic SPP, picked by
+// ROVER_TRANSPORT in config.h (see rover_transport.h for the selection).
+RoverTransport transport;
 
 // Buffer for UART data
 uint8_t uartBuffer[UART_BUF_SIZE];
@@ -83,10 +86,10 @@ void logPrintln(const char *format, ...)
     }
 }
 
-// Callback invoked when data arrives from BLE (iOS → UART)
-void onBLEDataReceived(const uint8_t *data, size_t length)
+// Callback invoked when data arrives from the mobile app (app → UART)
+void onTransportDataReceived(const uint8_t *data, size_t length)
 {
-    logPrint("[Bridge] BLE → UART: %d bytes\n", length);
+    logPrint("[Bridge] %s → UART: %d bytes\n", transport.name(), length);
 
     // Send data to GPS via UART
     uartHandler.writeData(data, length);
@@ -104,7 +107,7 @@ void handleTelnetCommands()
 
             if (cmd == "status")
             {
-                logPrintln("[Status] BLE: %s", bleService.isConnected() ? "Connected" : "Disconnected");
+                logPrintln("[Status] %s: %s", transport.name(), transport.isConnected() ? "Connected" : "Disconnected");
                 logPrintln("[Status] WiFi: %s", wifiEnabled ? "Enabled" : "Disabled");
                 logPrintln("[Status] Free Heap: %d bytes", ESP.getFreeHeap());
                 logPrintln("[Status] Uptime: %lu seconds", millis() / 1000);
@@ -133,13 +136,17 @@ void setup()
     delay(1000);
 
     logPrintln("\n\n========================================");
-    logPrintln("ESP32 UART-BLE Bridge");
-    logPrintln("GPS (NMEA) ↔ iOS via Nordic UART Service");
+    logPrintln("ESP32 UART-%s Bridge", transport.name());
+#if ROVER_TRANSPORT == TRANSPORT_SPP
+    logPrintln("GPS (NMEA) ↔ Android via Bluetooth Classic SPP");
+#else
+    logPrintln("GPS (NMEA) ↔ iOS/Android via Nordic UART Service");
+#endif
     logPrintln("========================================\n");
 
-    // Initialize BLE Status LED
-    pinMode(BLE_STATUS_LED_PIN, OUTPUT);
-    digitalWrite(BLE_STATUS_LED_PIN, LOW); // LOW = OFF (active HIGH)
+    // Initialize link status LED
+    pinMode(LINK_STATUS_LED_PIN, OUTPUT);
+    digitalWrite(LINK_STATUS_LED_PIN, LOW); // LOW = OFF (active HIGH)
 
     // 1. Initialize WiFi for OTA and WebSerial
     logPrintln("[Setup] Connecting to WiFi...");
@@ -239,45 +246,42 @@ void setup()
         while (1)
         {
             // Fast blinking on error
-            digitalWrite(BLE_STATUS_LED_PIN, !digitalRead(BLE_STATUS_LED_PIN));
+            digitalWrite(LINK_STATUS_LED_PIN, !digitalRead(LINK_STATUS_LED_PIN));
             delay(100);
         }
     }
 
-    // 3. Initialize BLE Nordic UART Service
-    logPrintln("[Setup] Initializing BLE...");
+    // 3. Initialize the mobile-facing transport (BLE NUS or Bluetooth SPP)
+    logPrintln("[Setup] Initializing %s...", transport.name());
 
-    // Set logging callback so BLE service can use logPrintln
-    bleService.setLogCallback(logPrintln);
+    // Set logging callback so the transport can use logPrintln
+    transport.setLogCallback(logPrintln);
 
-    if (!bleService.begin(BLE_DEVICE_NAME))
+    if (!transport.begin(BT_DEVICE_NAME))
     {
-        logPrintln("[ERROR] BLE initialization failed!");
+        logPrintln("[ERROR] %s initialization failed!", transport.name());
         while (1)
         {
             // Fast blinking on error
-            digitalWrite(BLE_STATUS_LED_PIN, !digitalRead(BLE_STATUS_LED_PIN));
+            digitalWrite(LINK_STATUS_LED_PIN, !digitalRead(LINK_STATUS_LED_PIN));
             delay(200);
         }
     }
 
-    // Set BLE TX power to low power mode (-12dBm)
-    esp_ble_tx_power_set(ESP_BLE_PWR_TYPE_DEFAULT, BLE_TX_POWER);
-    esp_ble_tx_power_set(ESP_BLE_PWR_TYPE_ADV, BLE_TX_POWER);
-    esp_ble_tx_power_set(ESP_BLE_PWR_TYPE_SCAN, BLE_TX_POWER);
-    logPrintln("[BLE] TX Power set to -12dBm (low power mode)");
+    // Radio-specific low power TX level (see BLE_TX_POWER / SPP_TX_POWER)
+    transport.setTxPower();
 
-    // Set callback for incoming BLE data
-    bleService.setDataCallback(onBLEDataReceived);
+    // Set callback for incoming data from the mobile app
+    transport.setDataCallback(onTransportDataReceived);
 
     logPrintln("\n[Setup] Initialization complete!");
     logPrintln("[Setup] Bridge is ready to forward data:");
-    logPrintln("         GPS (UART) → BLE → iOS");
-    logPrintln("         iOS → BLE → GPS (UART)");
-    logPrintln("\nWaiting for GPS data and iOS connection...\n");
+    logPrintln("         GPS (UART) → %s → mobile", transport.name());
+    logPrintln("         mobile → %s → GPS (UART)", transport.name());
+    logPrintln("\nWaiting for GPS data and mobile connection...\n");
 
     // LED OFF on start - waiting for connection
-    digitalWrite(BLE_STATUS_LED_PIN, LOW); // LOW = OFF
+    digitalWrite(LINK_STATUS_LED_PIN, LOW); // LOW = OFF
 }
 
 void loop()
@@ -340,7 +344,7 @@ void loop()
         ArduinoOTA.handle();
     }
 
-    // ===== UART → BLE (GPS → iOS) =====
+    // ===== UART → transport (GPS → mobile) =====
     // Check if there's GPS data and send IMMEDIATELY
     size_t availableBytes = uartHandler.available();
     if (availableBytes > 0)
@@ -352,32 +356,32 @@ void loop()
         if (bytesRead > 0)
         {
             // Debug log
-            logPrint("[Bridge] UART → BLE: %d bytes\n", bytesRead);
+            logPrint("[Bridge] UART → %s: %d bytes\n", transport.name(), bytesRead);
 
-            // SEND IMMEDIATELY via BLE (chunking is in sendData)
-            if (bleService.isConnected())
+            // SEND IMMEDIATELY (BLE chunking / SPP queueing is in sendData)
+            if (transport.isConnected())
             {
-                bleService.sendData(uartBuffer, bytesRead);
+                transport.sendData(uartBuffer, bytesRead);
             }
         }
     }
 
-    // ===== BLE Status LED =====
+    // ===== Link Status LED =====
     static unsigned long lastBlink = 0;
     static bool ledState = false;
 
-    if (bleService.isConnected())
+    if (transport.isConnected())
     {
         // Device connected - LED solid (HIGH = ON)
-        digitalWrite(BLE_STATUS_LED_PIN, HIGH);
+        digitalWrite(LINK_STATUS_LED_PIN, HIGH);
     }
     else
     {
         // No connection - LED blinks every 250ms
-        if (millis() - lastBlink >= BLE_LED_BLINK_MS)
+        if (millis() - lastBlink >= LINK_LED_BLINK_MS)
         {
             ledState = !ledState;
-            digitalWrite(BLE_STATUS_LED_PIN, ledState ? HIGH : LOW); // HIGH = ON, LOW = OFF
+            digitalWrite(LINK_STATUS_LED_PIN, ledState ? HIGH : LOW); // HIGH = ON, LOW = OFF
             lastBlink = millis();
         }
     }

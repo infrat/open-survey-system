@@ -1,6 +1,26 @@
 #ifndef CONFIG_H
 #define CONFIG_H
 
+// ===== Transport Selection (BLE vs Bluetooth Classic SPP) =====
+// The rover bridges the GNSS UART to a mobile app over one of two radios.
+// Selected at compile time - both stacks cannot run at the same time
+// (NimBLE and Bluedroid are mutually exclusive Bluetooth hosts).
+//
+//   TRANSPORT_BLE - BLE Nordic UART Service via NimBLE. Works on iOS and
+//                   Android. Lower RAM/flash footprint, lower power.
+//   TRANSPORT_SPP - Bluetooth Classic Serial Port Profile via Bluedroid.
+//                   ANDROID ONLY - iOS does not expose SPP to apps without
+//                   MFi certification. Higher throughput, higher power draw.
+//
+// Override from platformio.ini:
+//   build_flags = -DROVER_TRANSPORT=TRANSPORT_SPP
+#define TRANSPORT_BLE 0
+#define TRANSPORT_SPP 1
+
+#ifndef ROVER_TRANSPORT
+#define ROVER_TRANSPORT TRANSPORT_SPP
+#endif
+
 // ===== UART Configuration (GPS) =====
 #define GPS_UART_NUM UART_NUM_1 // UART1 for GPS
 #define GPS_RX_PIN 25           // GPIO25 - receive data from GPS (TX GPS → RX ESP32)
@@ -26,13 +46,16 @@
 #define DAYLIGHT_OFFSET_SEC 3600  // Daylight saving time offset (1 hour)
 
 // ===== Power Saving Configuration =====
-#define BLE_TX_POWER ESP_PWR_LVL_N9 // BLE TX power: -12dBm (low power mode)
+#define BLE_TX_POWER ESP_PWR_LVL_N9 // BLE TX power: -9dBm (low power mode)
+#define SPP_TX_POWER ESP_PWR_LVL_N9 // BR/EDR TX power: -9dBm (low power mode)
 #define CPU_FREQ_ACTIVE 240         // CPU frequency when transferring data (MHz)
 
-// ===== BLE Configuration =====
-#define BLE_DEVICE_NAME "OSSRTK" // Name visible in BLE scanners
-#define BLE_MTU_SIZE 185         // Maximum MTU (BLE supports up to ~185)
-#define BLE_CHUNK_SIZE 180       // Data chunk size to send (smaller than MTU)
+// ===== Bluetooth Device Name (both transports) =====
+#define BT_DEVICE_NAME "OSSRTK" // Name visible in BLE scanners / BT pairing list
+
+// ===== BLE Configuration (ROVER_TRANSPORT == TRANSPORT_BLE) =====
+#define BLE_MTU_SIZE 185   // Maximum MTU (BLE supports up to ~185)
+#define BLE_CHUNK_SIZE 180 // Data chunk size to send (smaller than MTU)
 
 // Nordic UART Service UUIDs (standard for BLE compatibility)
 #define SERVICE_UUID "6E400001-B5A3-F393-E0A9-E50E24DCCA9E"
@@ -40,8 +63,8 @@
 #define CHARACTERISTIC_UUID_TX "6E400003-B5A3-F393-E0A9-E50E24DCCA9E" // ESP32 → BLE
 
 // ===== Other Settings =====
-#define BLE_STATUS_LED_PIN 23 // BLE status LED on GPIO23 (active HIGH)
-#define BLE_LED_BLINK_MS 250  // LED blink period when not connected (250ms ON/OFF)
-#define NMEA_MAX_LENGTH 82    // Maximum NMEA sentence length
+#define LINK_STATUS_LED_PIN 23 // Transport status LED on GPIO23 (active HIGH)
+#define LINK_LED_BLINK_MS 250  // LED blink period when not connected (250ms ON/OFF)
+#define NMEA_MAX_LENGTH 82     // Maximum NMEA sentence length
 
 #endif // CONFIG_H

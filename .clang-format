@@ -1,0 +1,10 @@
+---
+# Matches the existing style of the OSS firmware sources (Allman braces,
+# 4-space indent, no forced line wrapping).
+BasedOnStyle: LLVM
+BreakBeforeBraces: Allman
+IndentWidth: 4
+AccessModifierOffset: -4
+ColumnLimit: 0
+AllowShortFunctionsOnASingleLine: Inline
+SortIncludes: false

@@ -25,6 +25,10 @@ ENV_CONFIG = {
     "oss-rover": {
         "include": "firmware/rover/include",
     },
+    # Same sources as oss-rover, Bluetooth Classic SPP instead of BLE
+    "oss-rover-spp": {
+        "include": "firmware/rover/include",
+    },
 }
 
 cfg = ENV_CONFIG.get(PIOENV, {})
