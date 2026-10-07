@@ -49,6 +49,28 @@ The UI has three tabs:
 
 **Save & Restart** stores the settings in flash (NVS) and reboots the rover.
 
+### Screenshots
+
+The web UI is a single responsive page, designed for a phone screen.
+
+**Status** - during the setup window (Bluetooth waits until the page is closed or **Start Bluetooth now** is pressed) and once a client has connected:
+
+|                                                  |                                                                 |
+| ------------------------------------------------ | --------------------------------------------------------------- |
+| ![Status - setup mode](../../imgs/rover-ui/status.png) | ![Status - client connected](../../imgs/rover-ui/status-connected.png) |
+
+**Connection** - choose the client link; the TCP port and the addresses to point your app at appear for the WiFi (TCP) link:
+
+|                                                           |                                                                   |
+| --------------------------------------------------------- | ----------------------------------------------------------------- |
+| ![Connection - Bluetooth LE](../../imgs/rover-ui/connection.png) | ![Connection - WiFi TCP](../../imgs/rover-ui/connection-tcp.png) |
+
+**WiFi** - mode, network credentials, the rover's own access point and the setup window length; the scan button lists nearby networks:
+
+|                                               |                                                     |
+| --------------------------------------------- | --------------------------------------------------- |
+| ![WiFi settings](../../imgs/rover-ui/wifi.png) | ![WiFi network scan](../../imgs/rover-ui/wifi-scan.png) |
+
 ### Client links
 
 | Link                   | iOS | Android | Notes                                                        |
